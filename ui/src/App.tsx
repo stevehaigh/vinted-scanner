@@ -1,0 +1,239 @@
+import { useCallback, useEffect, useState } from "react";
+import yaml from "js-yaml";
+import Finds from "./Finds";
+import WatchCard from "./WatchCard";
+import * as gh from "./github";
+import { parseSearchUrl, suggestId } from "./vinted";
+import type { ScanEvent, Watch, WatchFile } from "./types";
+
+const WATCHES_PATH = "watches.yaml";
+
+type Tab = "watches" | "finds";
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>("watches");
+  const [token, setTokenState] = useState(gh.getToken());
+  const [watches, setWatches] = useState<Watch[]>([]);
+  const [sha, setSha] = useState<string>();
+  const [events, setEvents] = useState<ScanEvent[]>([]);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const [pastedUrl, setPastedUrl] = useState("");
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const file = await gh.readFile(WATCHES_PATH);
+      if (file) {
+        const parsed = yaml.load(file.text) as WatchFile;
+        setWatches(
+          (parsed?.watches ?? []).map((w) => ({
+            ...w,
+            enabled: w.enabled ?? true,
+            notify_on: w.notify_on ?? parsed?.defaults?.notify_on ?? ["new_listing"],
+          })),
+        );
+        setSha(file.sha);
+      }
+      const log = await gh.readFile(gh.currentMonthPath());
+      setEvents(
+        log
+          ? log.text
+              .trim()
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => JSON.parse(line) as ScanEvent)
+              .reverse()
+              .slice(0, 200)
+          : [],
+      );
+      setDirty(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Don't let a phone tab-switch quietly discard unsaved watches.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (dirty) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const update = (next: Watch[]) => {
+    setWatches(next);
+    setDirty(true);
+    setNote("");
+  };
+
+  const save = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const body: WatchFile = { version: 1, watches };
+      const text =
+        "# Managed by the scanner UI and by hand. Both are fine.\n" +
+        yaml.dump(body, { lineWidth: 100, noRefs: true });
+      const newSha = await gh.writeFile(
+        WATCHES_PATH,
+        text,
+        sha,
+        `watches: update from UI (${watches.length} watches)`,
+      );
+      setSha(newSha);
+      setDirty(false);
+      setNote("Saved. The next scheduled scan will pick it up.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addFromUrl = () => {
+    setError("");
+    try {
+      const query = parseSearchUrl(pastedUrl);
+      const base = suggestId(query);
+      const taken = new Set(watches.map((w) => w.id));
+      let id = base;
+      for (let n = 2; taken.has(id); n += 1) id = `${base}-${n}`;
+
+      update([
+        ...watches,
+        { id, label: "", source: "vinted", enabled: true, notify_on: ["new_listing"], query },
+      ]);
+      setPastedUrl("");
+      setTab("watches");
+    } catch {
+      setError("That doesn't look like a Vinted search URL.");
+    }
+  };
+
+  const addBlank = (source: string) => {
+    const taken = new Set(watches.map((w) => w.id));
+    let id = `new-${source}`;
+    for (let n = 2; taken.has(id); n += 1) id = `new-${source}-${n}`;
+    update([
+      ...watches,
+      {
+        id,
+        label: "",
+        source,
+        enabled: false,
+        notify_on: source === "vinted" ? ["new_listing"] : ["price_drop"],
+        query: source === "vinted" ? { host: "www.vinted.co.uk", order: "newest_first" } : {},
+      },
+    ]);
+  };
+
+  const saveToken = (value: string) => {
+    gh.setToken(value.trim());
+    setTokenState(value.trim());
+    void load();
+  };
+
+  return (
+    <div className="wrap">
+      <header>
+        <h1>Scanner</h1>
+        <span className="repo">{gh.getRepo()}</span>
+      </header>
+
+      <nav>
+        <button role="tab" aria-selected={tab === "watches"} onClick={() => setTab("watches")}>
+          Watches {watches.length > 0 && `(${watches.length})`}
+        </button>
+        <button role="tab" aria-selected={tab === "finds"} onClick={() => setTab("finds")}>
+          Recent finds {events.length > 0 && `(${events.length})`}
+        </button>
+      </nav>
+
+      {error && <div className="banner error">{error}</div>}
+      {note && <div className="banner ok">{note}</div>}
+
+      {!token && (
+        <div className="card">
+          <label htmlFor="token">GitHub token</label>
+          <input
+            id="token"
+            type="password"
+            placeholder="github_pat_…"
+            onBlur={(e) => saveToken(e.target.value)}
+          />
+          <p className="muted" style={{ marginBottom: 0 }}>
+            A fine-grained token with <strong>Contents: read and write</strong> on this repository
+            only. Stored in this browser, sent only to api.github.com. Needed to save; reading a
+            public repo works without one.
+          </p>
+        </div>
+      )}
+
+      {tab === "watches" ? (
+        <>
+          <div className="card">
+            <label htmlFor="paste">Add from a Vinted search URL</label>
+            <input
+              id="paste"
+              type="text"
+              value={pastedUrl}
+              placeholder="https://www.vinted.co.uk/catalog?search_text=…"
+              onChange={(e) => setPastedUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && pastedUrl && addFromUrl()}
+            />
+            <div className="actions">
+              <button className="btn primary" onClick={addFromUrl} disabled={!pastedUrl}>
+                Import
+              </button>
+              <button className="btn" onClick={() => addBlank("vinted")}>
+                Blank Vinted watch
+              </button>
+              <button className="btn" onClick={() => addBlank("shopify")}>
+                Blank Shopify watch
+              </button>
+            </div>
+          </div>
+
+          {busy && watches.length === 0 && <p className="muted">Loading…</p>}
+
+          {watches.map((watch, index) => (
+            <WatchCard
+              key={index}
+              watch={watch}
+              onChange={(next) => update(watches.map((w, i) => (i === index ? next : w)))}
+              onRemove={() => update(watches.filter((_, i) => i !== index))}
+            />
+          ))}
+
+          <div className="actions">
+            <button className="btn primary" onClick={save} disabled={!dirty || busy || !token}>
+              {busy ? "Saving…" : "Save to GitHub"}
+            </button>
+            <button className="btn subtle" onClick={() => void load()} disabled={busy}>
+              Reload
+            </button>
+            {dirty && <span className="muted">Unsaved changes</span>}
+            {token && (
+              <button className="btn subtle" onClick={() => saveToken("")}>
+                Forget token
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <Finds events={events} />
+      )}
+    </div>
+  );
+}

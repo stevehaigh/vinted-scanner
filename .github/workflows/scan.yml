@@ -1,0 +1,77 @@
+name: Scan
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub's scheduler runs late under load, so expect
+    # 15-25 minutes of real latency - this is a digest, not a sniping tool.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the digest instead of emailing, and write nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # the event log is committed back to this repo
+  actions: write    # the keepalive step re-enables this workflow
+
+# Two runs must never race to commit the log. Queue rather than cancel: a
+# cancelled run would drop findings it had already fetched.
+concurrency:
+  group: scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Scan
+        env:
+          GMAIL_ADDRESS: ${{ vars.GMAIL_ADDRESS }}
+          RECIPIENT_EMAIL: ${{ vars.RECIPIENT_EMAIL }}
+          HEARTBEAT_WEEKDAY: ${{ vars.HEARTBEAT_WEEKDAY }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          uv run python -m scanner scan \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Commit what changed
+        if: ${{ !inputs.dry_run }}
+        run: |
+          if git diff --quiet -- data; then
+            echo "nothing new"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git commit -m "data: scan $(date -u +'%Y-%m-%dT%H:%MZ')"
+
+          # The concurrency group makes a conflicting push unlikely, not
+          # impossible - a manual dispatch can still land mid-run.
+          for attempt in 1 2 3; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected, rebasing (attempt $attempt)"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            sleep $((attempt * 3))
+          done
+          echo "could not push after 3 attempts" >&2
+          exit 1
+
+      # GitHub disables cron schedules after 60 days without repo activity;
+      # re-enabling the workflow on every run resets that timer.
+      - name: Keepalive
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/scan.yml/enable"

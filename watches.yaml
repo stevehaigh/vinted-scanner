@@ -1,0 +1,38 @@
+# Watches scanned on a schedule by .github/workflows/scan.yml
+#
+# Add one by hand, or paste a Vinted search URL into the web UI, or run:
+#   uv run python -m scanner import-url "https://www.vinted.co.uk/catalog?search_text=..."
+#
+# notify_on: new_listing | price_drop | back_in_stock | went_on_sale
+
+version: 1
+
+defaults:
+  notify_on: [new_listing]
+
+watches:
+  - id: patagonia-fleece
+    label: Patagonia fleece under £60
+    source: vinted
+    enabled: true
+    notify_on: [new_listing]
+    query:
+      host: www.vinted.co.uk
+      search_text: patagonia fleece
+      price_to: 60
+      currency: GBP
+      order: newest_first
+      per_page: 40
+
+  # Shopify storefronts serve an unauthenticated product feed, so price and
+  # stock watching needs no scraping. Disabled by default - enable when you
+  # actually want it.
+  - id: pwvc-sale
+    label: Private White V.C. — price drops
+    source: shopify
+    enabled: false
+    notify_on: [price_drop, went_on_sale]
+    query:
+      base_url: https://privatewhitevc.com
+      collection: all
+      max_products: 250

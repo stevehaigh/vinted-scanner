@@ -1,0 +1,71 @@
+"""The CLI surface people actually type."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from scanner.cli import main
+
+
+def test_import_url_prints_a_pasteable_watch(capsys):
+    exit_code = main(
+        ["import-url", "https://www.vinted.co.uk/catalog?search_text=patagonia%20fleece&price_to=60"]
+    )
+    parsed = json.loads(capsys.readouterr().out)
+
+    assert exit_code == 0
+    assert parsed["source"] == "vinted"
+    assert parsed["id"] == "patagonia-fleece"
+    assert parsed["query"]["search_text"] == "patagonia fleece"
+    assert parsed["query"]["price_to"] == "60"
+
+
+def test_import_url_accepts_an_explicit_id(capsys):
+    main(["import-url", "https://www.vinted.fr/catalog?search_text=x", "--id", "chosen"])
+
+    assert json.loads(capsys.readouterr().out)["id"] == "chosen"
+
+
+def test_list_shows_the_configured_watches(capsys):
+    assert main(["list"]) == 0
+    assert capsys.readouterr().out.strip()
+
+
+def test_a_missing_config_exits_non_zero(capsys, tmp_path):
+    exit_code = main(["--config", str(tmp_path / "nope.yaml"), "list"])
+
+    assert exit_code == 2
+    assert "config error" in capsys.readouterr().err
+
+
+def test_rebuild_db_derives_a_queryable_database(tmp_path, capsys):
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from scanner.models import Event, Observation
+    from scanner.store import Store
+
+    store = Store(tmp_path)
+    store.append(
+        [
+            Event(
+                at=datetime(2026, 9, 9, tzinfo=UTC),
+                kind="appeared",
+                watch_id="w",
+                observation=Observation(
+                    source="vinted", entity_key="1", url="u", title="Fleece",
+                    attributes={"price": "29.88", "currency": "GBP"},
+                ),
+            )
+        ]
+    )
+
+    assert main(["--data-dir", str(tmp_path), "rebuild-db"]) == 0
+
+    connection = sqlite3.connect(tmp_path / "scanner.db")
+    assert connection.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
+    price = connection.execute("SELECT price FROM price_history").fetchone()[0]
+    assert price == pytest.approx(29.88)
+    connection.close()
