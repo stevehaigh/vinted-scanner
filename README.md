@@ -83,6 +83,11 @@ Each watch chooses what it wants to hear about:
 | `back_in_stock` | Availability went from false to true |
 | `went_on_sale` | A Shopify compare-at price appeared above the price |
 
+Pick these to match the store. Many Shopify shops leave `compare_at_price`
+empty and simply lower the price, in which case `went_on_sale` never fires and
+`price_drop` is the rule you want. A Shopify watch also needs a `currency` in
+its query, because the product feed does not carry one.
+
 ## Running it locally
 
 ```bash

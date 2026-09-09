@@ -25,14 +25,18 @@ watches:
       per_page: 40
 
   # Shopify storefronts serve an unauthenticated product feed, so price and
-  # stock watching needs no scraping. Disabled by default - enable when you
-  # actually want it.
+  # stock watching needs no scraping.
+  # went_on_sale is omitted deliberately: this store leaves compare_at_price
+  # empty, so a discount shows up as the price itself falling, not as a
+  # compare-at appearing. back_in_stock is the rule most likely to fire here,
+  # since most variants are sold-out sizes.
   - id: pwvc-sale
-    label: Private White V.C. — price drops
+    label: Private White V.C. — price drops and restocks
     source: shopify
-    enabled: false
-    notify_on: [price_drop, went_on_sale]
+    enabled: true
+    notify_on: [price_drop, back_in_stock]
     query:
       base_url: https://privatewhitevc.com
       collection: all
+      currency: GBP
       max_products: 250

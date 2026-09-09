@@ -166,3 +166,76 @@ class TestBrowserHeaders:
         VintedSource().fetch({}, vinted_session)
 
         assert vinted_session.headers["Accept-Language"]
+
+
+class TestShopifyPagination:
+    """The cap counts products, which is what the API pages on.
+
+    Counting observations instead stops early on any store with several
+    variants per product, and most have one variant per size.
+    """
+
+    def _store(self, products_per_page: int, variants_each: int):
+        def product(n: int):
+            return {
+                "id": n,
+                "handle": f"p{n}",
+                "title": f"Product {n}",
+                "images": [{"src": "x"}],
+                "variants": [
+                    {"id": n * 100 + v, "price": "10.00", "available": True}
+                    for v in range(variants_each)
+                ],
+            }
+
+        pages = {}
+        for page in range(1, 4):
+            start = (page - 1) * products_per_page
+            pages[page] = [product(start + i) for i in range(products_per_page)]
+        return pages
+
+    def test_pages_until_the_product_cap_is_reached(self):
+        pages = self._store(products_per_page=2, variants_each=6)
+        calls = []
+
+        class Paging(FakeSession):
+            def get(self, url, params=None, **kw):
+                calls.append(params or {})
+                page = (params or {}).get("page", 1)
+                return FakeResponse({"products": pages.get(page, [])})
+
+        session = Paging({})
+        observations = ShopifySource().fetch(
+            {"base_url": "https://example.com", "max_products": 4}, session
+        )
+
+        # Two pages of two products, six variants each: 24 observations.
+        assert len(calls) == 2
+        assert len(observations) == 24
+
+    def test_stops_when_a_page_comes_back_empty(self):
+        class Empty(FakeSession):
+            def get(self, url, params=None, **kw):
+                return FakeResponse({"products": []})
+
+        observations = ShopifySource().fetch(
+            {"base_url": "https://example.com", "max_products": 250}, Empty({})
+        )
+
+        assert observations == []
+
+
+class TestShopifyCurrency:
+    """products.json carries no currency, so the watch declares it."""
+
+    def test_the_declared_currency_reaches_the_observation(self, shopify_session):
+        observations = ShopifySource().fetch(
+            {"base_url": "https://example.com", "currency": "EUR"}, shopify_session
+        )
+
+        assert observations[0].attributes["currency"] == "EUR"
+
+    def test_defaults_to_gbp(self, shopify_session):
+        observations = ShopifySource().fetch({"base_url": "https://example.com"}, shopify_session)
+
+        assert observations[0].attributes["currency"] == "GBP"

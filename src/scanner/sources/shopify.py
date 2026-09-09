@@ -37,6 +37,8 @@ class ShopifySource:
             raise SourceError("shopify watch needs a base_url")
 
         collection = query.get("collection", "all")
+        # products.json carries no currency, so the watch declares it.
+        currency = query.get("currency", "GBP")
         limit = int(query.get("max_products", PAGE_SIZE))
         path = f"/collections/{collection}/products.json" if collection else "/products.json"
 
@@ -46,8 +48,12 @@ class ShopifySource:
         session.headers["Accept"] = "application/json"
 
         observations: list[Observation] = []
+        fetched = 0
         for page in range(1, MAX_PAGES + 1):
-            remaining = limit - len(observations)
+            # Page on *products*, which is what the API counts. Paging on
+            # observations would stop early on any store with several variants
+            # per product - and most have one per size.
+            remaining = limit - fetched
             if remaining <= 0:
                 break
 
@@ -66,12 +72,15 @@ class ShopifySource:
 
             if not products:
                 break
+            fetched += len(products)
             for product in products:
-                observations.extend(self._observations_for(product, base))
+                observations.extend(self._observations_for(product, base, currency))
 
         return observations
 
-    def _observations_for(self, product: dict[str, Any], base: str) -> list[Observation]:
+    def _observations_for(
+        self, product: dict[str, Any], base: str, currency: str = "GBP"
+    ) -> list[Observation]:
         handle = product.get("handle", "")
         image = (product.get("images") or [{}])[0].get("src")
         product_id = product.get("id")
@@ -88,6 +97,7 @@ class ShopifySource:
                     title=product.get("title") or "",
                     attributes={
                         "price": price,
+                        "currency": currency,
                         "compare_at_price": compare_at,
                         "available": bool(variant.get("available")),
                         "variant": variant.get("title"),
