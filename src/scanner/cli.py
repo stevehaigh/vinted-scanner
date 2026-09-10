@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import config as config_module
 from . import db as db_module
-from .notify import ConsoleNotifier, EmailNotifier, EmailSettings
+from .notify import ConsoleNotifier, EmailError, EmailNotifier, EmailSettings
 from .scan import run_scan
 from .sources.vinted import parse_search_url
 from .store import Store
@@ -52,6 +52,10 @@ def main(argv: list[str] | None = None) -> int:
     except config_module.ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
+    except EmailError as exc:
+        # The watermark was not advanced, so the digest goes out next run.
+        print(f"email error: {exc}", file=sys.stderr)
+        return 1
 
 
 def _dispatch(args: argparse.Namespace) -> int:
@@ -90,10 +94,13 @@ def _scan(args: argparse.Namespace) -> int:
             )
     else:
         settings = EmailSettings.from_env()
-        notifier = EmailNotifier(settings) if settings else ConsoleNotifier()
+        # No email means no notifier at all: a console fallback would count as
+        # delivered and advance the watermark, eating alerts the scheduled run
+        # was meant to send. Use --dry-run to see the digest locally.
+        notifier = EmailNotifier(settings) if settings else None
         if settings is None:
             logging.getLogger("scanner").warning(
-                "GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set - printing instead of emailing"
+                "GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set - nothing will be sent"
             )
         weekday = os.environ.get("HEARTBEAT_WEEKDAY")
         report = run_scan(

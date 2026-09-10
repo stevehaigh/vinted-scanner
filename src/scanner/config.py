@@ -22,7 +22,10 @@ def load(path: Path | str = DEFAULT_PATH) -> Config:
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"no config at {path}")
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ConfigError(f"{path} is not valid YAML: {exc}") from exc
     return parse(raw)
 
 

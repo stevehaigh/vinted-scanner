@@ -37,18 +37,20 @@ watches.yaml ──> Source.fetch() ──> diff against log ──> events
 You need a Gmail address and an [app password](https://myaccount.google.com/apppasswords).
 Ordinary Gmail passwords will not work over SMTP.
 
-In **Settings → Secrets and variables → Actions**, add a repository *secret*:
+In **Settings → Secrets and variables → Actions**, add these repository
+*secrets* (secrets, not variables: Actions logs are public on a public repo,
+and GitHub masks only secrets):
 
 | Secret | What it is |
 | --- | --- |
 | `GMAIL_APP_PASSWORD` | The 16-character app password |
+| `GMAIL_ADDRESS` | The Gmail address that sends the mail |
+| `RECIPIENT_EMAIL` | Where alerts go. Comma-separated for several. Defaults to the sender |
 
-and these repository *variables*:
+and this repository *variable*:
 
 | Variable | What it is |
 | --- | --- |
-| `GMAIL_ADDRESS` | The Gmail address that sends the mail |
-| `RECIPIENT_EMAIL` | Where alerts go. Comma-separated for several. Defaults to the sender |
 | `HEARTBEAT_WEEKDAY` | Day for the "still alive" email, 0 = Monday. Leave unset to disable |
 
 Then enable GitHub Pages under **Settings → Pages**, with **GitHub Actions** as

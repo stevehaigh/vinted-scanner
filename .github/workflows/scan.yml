@@ -43,10 +43,14 @@ jobs:
           uv run python -m scanner scan \
             ${{ inputs.dry_run && '--dry-run' || '' }}
 
+      # Runs even when the scan step failed: the log is appended before the
+      # digest is sent, so a rejected email must not throw away the findings.
+      # `git status` rather than `git diff`: the first run of each month creates
+      # an untracked file, which diff would not see.
       - name: Commit what changed
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !cancelled() && !inputs.dry_run }}
         run: |
-          if git diff --quiet -- data; then
+          if [ -z "$(git status --porcelain -- data)" ]; then
             echo "nothing new"
             exit 0
           fi

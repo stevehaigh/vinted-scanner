@@ -69,3 +69,48 @@ def test_rebuild_db_derives_a_queryable_database(tmp_path, capsys):
     price = connection.execute("SELECT price FROM price_history").fetchone()[0]
     assert price == pytest.approx(29.88)
     connection.close()
+
+
+def test_invalid_yaml_is_a_config_error_not_a_traceback(capsys, tmp_path):
+    bad = tmp_path / "watches.yaml"
+    bad.write_text("watches: [\n  - id: x\n", encoding="utf-8")
+
+    exit_code = main(["--config", str(bad), "list"])
+
+    assert exit_code == 2
+    assert "config error" in capsys.readouterr().err
+
+
+def test_a_scan_without_email_configured_has_no_notifier(monkeypatch, tmp_path):
+    """A console fallback would count as delivered and eat the scheduled digest."""
+    from scanner import cli
+    from scanner.models import RunReport
+
+    for name in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD", "HEARTBEAT_WEEKDAY"):
+        monkeypatch.delenv(name, raising=False)
+    seen = {}
+
+    def fake_run_scan(**kwargs):
+        seen.update(kwargs)
+        return RunReport()
+
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+
+    assert main(["--data-dir", str(tmp_path), "scan"]) == 0
+    assert seen["notifier"] is None
+
+
+def test_a_failed_send_is_one_line_and_a_non_zero_exit(monkeypatch, tmp_path, capsys):
+    from scanner import cli
+    from scanner.notify import EmailError
+
+    monkeypatch.setenv("GMAIL_ADDRESS", "a@example.com")
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "x")
+
+    def fake_run_scan(**kwargs):
+        raise EmailError("could not send mail: boom")
+
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+
+    assert main(["--data-dir", str(tmp_path), "scan"]) == 1
+    assert "email error: could not send mail: boom" in capsys.readouterr().err

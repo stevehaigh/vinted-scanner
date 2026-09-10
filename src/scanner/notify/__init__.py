@@ -14,6 +14,6 @@ class Notifier(Protocol):
 
 
 from .console import ConsoleNotifier  # noqa: E402
-from .email import EmailNotifier, EmailSettings  # noqa: E402
+from .email import EmailError, EmailNotifier, EmailSettings  # noqa: E402
 
-__all__ = ["ConsoleNotifier", "EmailNotifier", "EmailSettings", "Notifier"]
+__all__ = ["ConsoleNotifier", "EmailError", "EmailNotifier", "EmailSettings", "Notifier"]

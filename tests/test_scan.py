@@ -167,6 +167,28 @@ class TestFailureIsolation:
         assert len(report.appeared) == len(catalog["items"])
         assert notifier.sent
 
+    def test_a_source_that_chokes_on_its_response_fails_alone(self, tmp_path, catalog, now):
+        """A changed API shape raises inside the mapper, not a SourceError."""
+        config = parse(
+            {
+                "watches": [
+                    {"id": "broken", "source": "vinted", "query": {"search_text": "a"}},
+                    {"id": "fine", "source": "shopify", "query": {"base_url": "https://s"}},
+                ]
+            }
+        )
+        session = FakeSession(
+            {
+                "catalog/items": {"items": [{"title": "no id field"}]},
+                "products.json": load_fixture("shopify_products"),
+            }
+        )
+
+        report = scan(config, Store(tmp_path), session, now, CapturingNotifier())
+
+        assert [f.watch_id for f in report.failures] == ["broken"]
+        assert report.appeared
+
     def test_a_total_wipeout_reports_every_failure(self, tmp_path, now):
         config = parse({"watches": [{"id": "a", "source": "shopify", "query": {}}]})
 

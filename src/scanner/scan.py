@@ -44,9 +44,12 @@ def run_scan(
             source = get_source(watch.source)
             session = session_factory()
             observations = source.fetch(watch.query, session)
-        except (SourceError, requests.RequestException) as exc:
-            # One dead site must never stop the others reporting.
-            log.warning("watch %s failed: %s", watch.id, exc)
+        except Exception as exc:
+            # One dead site must never stop the others reporting - and a site
+            # changing its response shape under us counts as dead. Anything
+            # other than the expected failures gets a traceback in the log.
+            expected = isinstance(exc, SourceError | requests.RequestException)
+            log.warning("watch %s failed: %s", watch.id, exc, exc_info=not expected)
             report.failures.append(WatchFailure(watch_id=watch.id, error=str(exc)))
             continue
 
