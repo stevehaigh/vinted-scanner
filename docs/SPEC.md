@@ -1,4 +1,4 @@
-# Spec: multi-source watch-and-notify scanner
+# Spec: multi-platform watch-and-notify scanner
 
 > Synthesised from the `/grill-me` session. No issue tracker is configured for this
 > repo, so the spec lives here rather than being published as an issue.
@@ -18,7 +18,7 @@ I do not want to run or pay for a server.
 ## Solution
 
 A Python scanner that runs on a GitHub Actions schedule. Each run asks every
-enabled watch's source for what it can see right now, compares that against an
+enabled watch's platform for what it can see right now, compares that against an
 append-only history committed to this repo, and emails me a digest of what is
 genuinely new. A static React UI on GitHub Pages lets me manage watches from my
 phone by committing to this repo through the GitHub API.
@@ -41,7 +41,7 @@ than requiring a rewrite.
 10. As a cautious operator, I want the scheduled workflow to re-enable itself each run, so that GitHub's 60-day inactivity disable does not silently stop everything.
 11. As a cautious operator, I want a failed email send to leave the notification pending, so that a transient SMTP error does not lose an alert.
 12. As a cautious operator, I want one scan at a time, so that two runs cannot race to commit the same history file.
-13. As a cautious operator, I want a scan of a broken source to fail that watch alone, so that one dead site does not stop the others reporting.
+13. As a cautious operator, I want a scan of a broken platform to fail that watch alone, so that one dead site does not stop the others reporting.
 14. As a repo owner, I want history stored as line-oriented text, so that git can delta-compress it and the repo does not grow without bound.
 15. As a repo owner, I want history partitioned by month, so that a single file never becomes unwieldy.
 16. As a data magpie, I want every price change recorded, so that I can later ask what something actually sold for.
@@ -51,10 +51,10 @@ than requiring a rewrite.
 20. As a phone user, I want to see recent finds in that web page, so that I can check what the scanner has been doing.
 21. As a phone user, I want to paste a GitHub token once and have it remembered, so that I am not re-authenticating constantly.
 22. As a security-conscious user, I want that token scoped to this one repository's contents, so that its blast radius is a repo whose contents are already public.
-23. As a developer, I want sources to be pure functions of configuration, so that I can test them against recorded fixtures with no network.
+23. As a developer, I want platform adapters to be pure functions of configuration, so that I can test them against recorded fixtures with no network.
 24. As a developer, I want the whole scan driveable through one function, so that end-to-end tests need exactly one seam.
 25. As a developer, I want CI to never touch the network, so that tests do not fail because Vinted is having a bad day.
-26. As a developer, I want to add a source without editing the core, so that a new site is one new module plus a registry entry.
+26. As a developer, I want to add a platform without editing the core, so that a new site is one new module plus a registry entry.
 27. As a future me, I want to watch a specific product for a price drop, so that I can buy the thing I already know I want at the right moment.
 28. As a future me, I want to watch a retailer for anything newly discounted, so that I catch a sale on its first day.
 29. As a future me, I want a second notification channel without touching the scan logic, so that adding Telegram is a new adapter.
@@ -78,7 +78,7 @@ inactivity disable. A `concurrency` group prevents two runs racing to commit.
 
 ### The domain model
 
-One concept, `Observation`: a sighting of an entity by a source, carrying a
+One concept, `Observation`: a sighting of an entity by a platform, carrying a
 stable `entity_key`, a URL, a title, a bag of **material attributes** and a bag
 of **informational extras**. Material attributes are diffed between runs;
 extras are recorded but never diffed.
@@ -90,7 +90,7 @@ a permanent stream of spurious change events. Image URLs and counters are extras
 Comparing a run's observations against the current state of the log yields
 **events**, of which there are exactly two kinds:
 
-- `appeared` — this `(source, entity_key)` has never been seen before.
+- `appeared` — this `(platform, entity_key)` has never been seen before.
 - `changed` — it has, and at least one material attribute differs. The event
   records the before/after of each changed attribute.
 
@@ -128,19 +128,19 @@ the Python parser and the TypeScript UI, so the two cannot drift.
 
 Three seams, each with at least two adapters — no speculative abstraction:
 
-- **`Source`** — `fetch(query, session) -> list[Observation]`. Deliberately
-  stateless: the source always returns what it can currently see, and the core
-  does all diffing and owns all durable state. A source cannot get cursor
+- **`Platform`** — `fetch(query, session) -> list[Observation]`. Deliberately
+  stateless: the adapter always returns what it can currently see, and the core
+  does all diffing and owns all durable state. An adapter cannot get cursor
   handling wrong because it has no cursor. Adapters: `vinted`, `shopify`.
 - **`Notifier`** — `send(digest) -> None`. Adapters: `email`, `console`.
-- **HTTP** — sources are handed a `requests.Session`. Tests inject a
+- **HTTP** — adapters are handed a `requests.Session`. Tests inject a
   fixture-backed fake; CI never opens a socket.
 
 The highest seam, and the one end-to-end tests drive, is `run_scan(...)`: config
 in, events appended and a digest sent out, with store, notifier, clock and
 session all injected.
 
-### Sources
+### Platforms
 
 **Vinted** seeds cookies from the locale homepage, then calls
 `/api/v2/catalog/items`. `entity_key` is the item id. Material attributes:
@@ -164,7 +164,7 @@ over SSL with an app password — the same mechanism as the `nightjet-ticket-che
 repo, including the `HEARTBEAT_WEEKDAY` liveness email. Multipart alternative:
 plain text plus HTML with thumbnails.
 
-Dedup is on `(source, entity_key)` globally, not per watch. An item matching two
+Dedup is on `(platform, entity_key)` globally, not per watch. An item matching two
 watches notifies once. Relisted Vinted items get new ids and will notify again;
 content fingerprinting is deliberately deferred until there is an archive to
 validate it against.
@@ -182,7 +182,7 @@ A good test here exercises externally observable behaviour through a seam and
 would survive the implementation being rewritten. Tests assert on emitted
 events, digest content and log contents — never on private helpers.
 
-- **Sources** are tested against recorded HTTP fixtures captured from the real
+- **Platforms** are tested against recorded HTTP fixtures captured from the real
   APIs, through a fake session. This is the prior art the reference repo lacks
   entirely, and it is why CI needs no network.
 - **The store** is tested for append/replay round-tripping, month partitioning,
@@ -209,6 +209,6 @@ The reference repository (`Fuyucch1/Vinted-Notifications`) is AGPL-3.0. No code
 is taken from it; it was read for its approach to Vinted's API only. Its
 `pyVintedVN` module must not be vendored unless this project goes AGPL.
 
-Vinted's API is undocumented and unstable by nature. Source adapters are
+Vinted's API is undocumented and unstable by nature. Platform adapters are
 expected to break; failing one watch must never stop the others, and fixtures
 should be re-recorded when a break is diagnosed.

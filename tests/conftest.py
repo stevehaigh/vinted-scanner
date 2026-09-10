@@ -1,6 +1,6 @@
 """Shared test doubles.
 
-Sources are exercised through a fake session backed by recorded fixtures, so the
+Platforms are exercised through a fake session backed by recorded fixtures, so the
 suite never opens a socket and never fails because Vinted is having a bad day.
 """
 

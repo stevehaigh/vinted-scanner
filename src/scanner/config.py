@@ -8,8 +8,8 @@ from typing import Any
 import yaml
 
 from .models import Config, Watch
+from .platforms import platform_names
 from .rules import rule_names
-from .sources import source_names
 
 DEFAULT_PATH = Path("watches.yaml")
 
@@ -42,7 +42,7 @@ def parse(raw: dict[str, Any]) -> Config:
     if not isinstance(entries, list):
         raise ConfigError("config needs a 'watches' list")
 
-    known_sources = source_names()
+    known_platforms = platform_names()
     known_rules = rule_names()
     seen: set[str] = set()
     watches: list[Watch] = []
@@ -59,11 +59,13 @@ def parse(raw: dict[str, Any]) -> Config:
             raise ConfigError(f"duplicate watch id {watch_id!r}")
         seen.add(watch_id)
 
-        source = entry.get("source")
-        if source not in known_sources:
+        platform = entry.get("platform")
+        if platform is None and "source" in entry:
+            raise ConfigError(f"{where} ({watch_id}): 'source' is now called 'platform'")
+        if platform not in known_platforms:
             raise ConfigError(
-                f"{where} ({watch_id}) has unknown source {source!r}; "
-                f"known: {', '.join(known_sources)}"
+                f"{where} ({watch_id}) has unknown platform {platform!r}; "
+                f"known: {', '.join(known_platforms)}"
             )
 
         query = entry.get("query")
@@ -91,7 +93,7 @@ def parse(raw: dict[str, Any]) -> Config:
         watches.append(
             Watch(
                 id=str(watch_id),
-                source=str(source),
+                platform=str(platform),
                 query=query,
                 notify_on=tuple(notify_on),
                 enabled=bool(entry.get("enabled", True)),

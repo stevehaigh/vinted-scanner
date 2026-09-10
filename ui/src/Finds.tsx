@@ -43,7 +43,7 @@ export default function Finds({ events }: { events: ScanEvent[] }) {
         const flag = headline(event);
         const image = event.extra.image as string | undefined;
         return (
-          <div className="find" key={`${event.source}:${event.entity_key}:${event.at}`}>
+          <div className="find" key={`${event.entity_key}:${event.at}`}>
             {image ? <img src={image} alt="" loading="lazy" /> : <div className="find-noimg" />}
             <div style={{ minWidth: 0 }}>
               <a href={event.url} target="_blank" rel="noreferrer">

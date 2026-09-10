@@ -16,7 +16,7 @@ from typing import Any
 import requests
 
 from ..models import Observation
-from .base import SourceError
+from .base import PlatformError
 
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -28,13 +28,13 @@ PAGE_SIZE = 250
 MAX_PAGES = 10
 
 
-class ShopifySource:
+class ShopifyPlatform:
     name = "shopify"
 
     def fetch(self, query: dict[str, Any], session: requests.Session) -> list[Observation]:
         base = str(query.get("base_url", "")).rstrip("/")
         if not base:
-            raise SourceError("shopify watch needs a base_url")
+            raise PlatformError("shopify watch needs a base_url")
 
         collection = query.get("collection", "all")
         # products.json carries no currency, so the watch declares it.
@@ -44,7 +44,7 @@ class ShopifySource:
         except (TypeError, ValueError):
             limit = 0
         if limit < 1:
-            raise SourceError(
+            raise PlatformError(
                 f"shopify max_products must be a positive whole number, "
                 f"not {query.get('max_products')!r}"
             )
@@ -70,15 +70,15 @@ class ShopifySource:
                 timeout=TIMEOUT,
             )
             if response.status_code != 200:
-                raise SourceError(f"shopify {base} returned HTTP {response.status_code}")
+                raise PlatformError(f"shopify {base} returned HTTP {response.status_code}")
 
             try:
                 payload = response.json()
             except ValueError as exc:
-                raise SourceError(f"shopify {base} returned unexpected JSON: {exc}") from exc
+                raise PlatformError(f"shopify {base} returned unexpected JSON: {exc}") from exc
             products = payload.get("products") if isinstance(payload, dict) else None
             if not isinstance(products, list) or not all(isinstance(p, dict) for p in products):
-                raise SourceError(f"shopify {base} returned no product list")
+                raise PlatformError(f"shopify {base} returned no product list")
 
             for product in products[: limit - fetched]:
                 observations.extend(self._observations_for(product, base, currency))
@@ -101,7 +101,7 @@ class ShopifySource:
             compare_at = variant.get("compare_at_price")
             results.append(
                 Observation(
-                    source=self.name,
+                    platform=self.name,
                     entity_key=f"{product_id}:{variant.get('id')}",
                     url=f"{base}/products/{handle}?variant={variant.get('id')}",
                     title=product.get("title") or "",

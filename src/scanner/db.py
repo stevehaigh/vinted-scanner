@@ -17,7 +17,7 @@ CREATE TABLE events (
     at          TEXT NOT NULL,
     kind        TEXT NOT NULL,
     watch_id    TEXT NOT NULL,
-    source      TEXT NOT NULL,
+    platform    TEXT NOT NULL,
     entity_key  TEXT NOT NULL,
     url         TEXT NOT NULL,
     title       TEXT NOT NULL,
@@ -27,13 +27,13 @@ CREATE TABLE events (
     extra       TEXT NOT NULL,
     changes     TEXT NOT NULL
 );
-CREATE INDEX events_entity ON events (source, entity_key, at);
+CREATE INDEX events_entity ON events (platform, entity_key, at);
 CREATE INDEX events_watch  ON events (watch_id, at);
 CREATE INDEX events_kind   ON events (kind, at);
 
 CREATE VIEW price_history AS
-  SELECT source, entity_key, title, url, at, price, currency
-  FROM events WHERE price IS NOT NULL ORDER BY source, entity_key, at;
+  SELECT platform, entity_key, title, url, at, price, currency
+  FROM events WHERE price IS NOT NULL ORDER BY platform, entity_key, at;
 """
 
 
@@ -54,7 +54,7 @@ def rebuild(store: Store, target: Path) -> int:
                     event.at.isoformat(),
                     event.kind,
                     event.watch_id,
-                    observation.source,
+                    observation.platform,
                     observation.entity_key,
                     observation.url,
                     observation.title,

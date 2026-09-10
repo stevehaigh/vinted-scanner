@@ -3,7 +3,7 @@ export type Query = Record<string, string | string[] | number | boolean>;
 export interface Watch {
   id: string;
   label?: string;
-  source: string;
+  platform: string;
   enabled: boolean;
   notify_on: string[];
   query: Query;
@@ -23,7 +23,8 @@ export interface ScanEvent {
   at: string;
   kind: "appeared" | "changed";
   watch_id: string;
-  source: string;
+  /** Lines written before 2026-09-10 call this `source`. */
+  platform?: string;
   entity_key: string;
   url: string;
   title: string;

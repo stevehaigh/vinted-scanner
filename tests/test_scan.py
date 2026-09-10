@@ -26,7 +26,7 @@ def config():
                 {
                     "id": "patagonia",
                     "label": "Patagonia fleece",
-                    "source": "vinted",
+                    "platform": "vinted",
                     "query": {"host": "www.vinted.co.uk", "search_text": "patagonia fleece"},
                     "notify_on": ["new_listing", "price_drop"],
                 }
@@ -149,12 +149,12 @@ class TestSecondRun:
 
 
 class TestFailureIsolation:
-    def test_one_dead_source_does_not_stop_the_others(self, tmp_path, catalog, now):
+    def test_one_dead_platform_does_not_stop_the_others(self, tmp_path, catalog, now):
         config = parse(
             {
                 "watches": [
-                    {"id": "dead", "source": "shopify", "query": {}},
-                    {"id": "alive", "source": "vinted", "query": {"search_text": "x"}},
+                    {"id": "dead", "platform": "shopify", "query": {}},
+                    {"id": "alive", "platform": "vinted", "query": {"search_text": "x"}},
                 ]
             }
         )
@@ -167,13 +167,13 @@ class TestFailureIsolation:
         assert len(report.appeared) == len(catalog["items"])
         assert notifier.sent
 
-    def test_a_source_that_chokes_on_its_response_fails_alone(self, tmp_path, catalog, now):
-        """A changed API shape raises inside the mapper, not a SourceError."""
+    def test_a_platform_that_chokes_on_its_response_fails_alone(self, tmp_path, catalog, now):
+        """A changed API shape raises inside the mapper, not a PlatformError."""
         config = parse(
             {
                 "watches": [
-                    {"id": "broken", "source": "vinted", "query": {"search_text": "a"}},
-                    {"id": "fine", "source": "shopify", "query": {"base_url": "https://s"}},
+                    {"id": "broken", "platform": "vinted", "query": {"search_text": "a"}},
+                    {"id": "fine", "platform": "shopify", "query": {"base_url": "https://s"}},
                 ]
             }
         )
@@ -190,7 +190,7 @@ class TestFailureIsolation:
         assert report.appeared
 
     def test_a_total_wipeout_reports_every_failure(self, tmp_path, now):
-        config = parse({"watches": [{"id": "a", "source": "shopify", "query": {}}]})
+        config = parse({"watches": [{"id": "a", "platform": "shopify", "query": {}}]})
 
         report = scan(config, Store(tmp_path), FakeSession({}), now, CapturingNotifier())
 
@@ -274,14 +274,14 @@ class TestOverlappingWatches:
                 "watches": [
                     {
                         "id": "drops",
-                        "source": "vinted",
+                        "platform": "vinted",
                         "query": {"search_text": "patagonia"},
                         "notify_on": ["price_drop"],
                     },
                     {
                         "id": "fleeces",
                         "label": "Fleeces",
-                        "source": "vinted",
+                        "platform": "vinted",
                         "query": {"search_text": "patagonia fleece"},
                         "notify_on": ["new_listing"],
                     },
@@ -305,8 +305,8 @@ class TestOverlappingWatches:
         config = parse(
             {
                 "watches": [
-                    {"id": "a", "source": "vinted", "query": {"search_text": "x"}},
-                    {"id": "b", "source": "vinted", "query": {"search_text": "y"}},
+                    {"id": "a", "platform": "vinted", "query": {"search_text": "x"}},
+                    {"id": "b", "platform": "vinted", "query": {"search_text": "y"}},
                 ]
             }
         )

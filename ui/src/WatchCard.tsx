@@ -35,7 +35,7 @@ export default function WatchCard({ watch, onChange, onRemove }: Props) {
   };
 
   const fields =
-    watch.source === "vinted"
+    watch.platform === "vinted"
       ? FIELDS.map((f) => ({ name: f.name, label: f.label, input: f.input, list: f.list }))
       : SHOPIFY_FIELDS.map((f) => ({ ...f, list: false }));
 
@@ -58,7 +58,7 @@ export default function WatchCard({ watch, onChange, onRemove }: Props) {
           onChange={(e) => set({ label: e.target.value })}
           style={{ flex: "1 1 200px", width: "auto", fontWeight: 600 }}
         />
-        <span className="chip">{watch.source}</span>
+        <span className="chip">{watch.platform}</span>
         <button className="btn danger" onClick={onRemove} aria-label={`Remove ${watch.id}`}>
           Remove
         </button>
@@ -74,7 +74,7 @@ export default function WatchCard({ watch, onChange, onRemove }: Props) {
             onChange={(e) => set({ id: e.target.value })}
           />
         </div>
-        {watch.source === "vinted" && (
+        {watch.platform === "vinted" && (
           <div>
             <label htmlFor={`${watch.id}-host`}>Vinted site</label>
             <input

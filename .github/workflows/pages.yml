@@ -3,7 +3,7 @@ name: Deploy UI
 on:
   push:
     branches: [main]
-    paths: ["ui/**", "src/scanner/sources/vinted_params.json", ".github/workflows/pages.yml"]
+    paths: ["ui/**", "src/scanner/platforms/vinted_params.json", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:

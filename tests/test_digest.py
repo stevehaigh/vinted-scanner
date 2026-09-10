@@ -16,7 +16,7 @@ def event(kind="appeared", watch="w", title="Patagonia Better Sweater", **change
         kind=kind,
         watch_id=watch,
         observation=Observation(
-            source="vinted",
+            platform="vinted",
             entity_key="1",
             url="https://vinted.co.uk/items/1",
             title=title,

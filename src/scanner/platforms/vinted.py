@@ -17,7 +17,7 @@ from urllib.parse import parse_qsl, urlparse
 import requests
 
 from ..models import Observation
-from .base import SourceError
+from .base import PlatformError
 
 PARAMS_PATH = Path(__file__).with_name("vinted_params.json")
 DEFAULT_HOST = "www.vinted.co.uk"
@@ -44,7 +44,7 @@ def parse_search_url(url: str) -> dict[str, Any]:
     """
     parsed = urlparse(url if "//" in url else f"https://{url}")
     if not parsed.netloc:
-        raise SourceError(f"not a Vinted URL: {url!r}")
+        raise PlatformError(f"not a Vinted URL: {url!r}")
 
     pairs = parse_qsl(parsed.query, keep_blank_values=False)
     query: dict[str, Any] = {"host": parsed.netloc}
@@ -81,13 +81,13 @@ def _money(value: Any) -> str | None:
     return None
 
 
-class VintedSource:
+class VintedPlatform:
     name = "vinted"
 
     def fetch(self, query: dict[str, Any], session: requests.Session) -> list[Observation]:
         host = query.get("host") or DEFAULT_HOST
         if host not in params_spec()["hosts"]:
-            raise SourceError(
+            raise PlatformError(
                 f"{host!r} is not a known Vinted site; add it to vinted_params.json if it should be"
             )
         self._prime(session, host)
@@ -98,14 +98,14 @@ class VintedSource:
             timeout=TIMEOUT,
         )
         if response.status_code != 200:
-            raise SourceError(f"vinted {host} returned HTTP {response.status_code}")
+            raise PlatformError(f"vinted {host} returned HTTP {response.status_code}")
 
         try:
             items = response.json()["items"]
         except (ValueError, KeyError, TypeError) as exc:
-            raise SourceError(f"vinted {host} returned unexpected JSON: {exc}") from exc
+            raise PlatformError(f"vinted {host} returned unexpected JSON: {exc}") from exc
         if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
-            raise SourceError(f"vinted {host} returned no item list")
+            raise PlatformError(f"vinted {host} returned no item list")
 
         return [self._to_observation(item, host) for item in items]
 
@@ -118,17 +118,17 @@ class VintedSource:
         Patagonia is 90804. Collaborations come back as separate brands.
         """
         if host not in params_spec()["hosts"]:
-            raise SourceError(f"{host!r} is not a known Vinted site")
+            raise PlatformError(f"{host!r} is not a known Vinted site")
         self._prime(session, host)
         response = session.get(
             f"https://{host}{BRANDS_PATH}", params={"keyword": keyword}, timeout=TIMEOUT
         )
         if response.status_code != 200:
-            raise SourceError(f"vinted {host} returned HTTP {response.status_code}")
+            raise PlatformError(f"vinted {host} returned HTTP {response.status_code}")
         try:
             found = response.json()["brands"]
         except (ValueError, KeyError, TypeError) as exc:
-            raise SourceError(f"vinted {host} returned unexpected JSON: {exc}") from exc
+            raise PlatformError(f"vinted {host} returned unexpected JSON: {exc}") from exc
         return [(int(b["id"]), str(b["title"])) for b in found if isinstance(b, dict)]
 
     def _prime(self, session: requests.Session, host: str) -> None:
@@ -144,13 +144,13 @@ class VintedSource:
         try:
             session.get(f"https://{host}/", timeout=TIMEOUT)
         except requests.RequestException as exc:
-            raise SourceError(f"could not reach {host}: {exc}") from exc
+            raise PlatformError(f"could not reach {host}: {exc}") from exc
 
     def _to_observation(self, item: dict[str, Any], host: str) -> Observation:
         photo = item.get("photo") or {}
         user = item.get("user") or {}
         return Observation(
-            source=self.name,
+            platform=self.name,
             entity_key=str(item["id"]),
             url=item.get("url") or f"https://{host}{item.get('path', '')}",
             title=item.get("title") or "",

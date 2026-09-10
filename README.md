@@ -8,7 +8,7 @@ A React page on GitHub Pages lets you manage watches from your phone.
 
 ## How it works
 
-Every 15 minutes, a scheduled workflow asks each enabled watch's source what it
+Every 15 minutes, a scheduled workflow asks each enabled watch's platform what it
 can see right now. It compares that against an append-only log committed to this
 repository, and emails a digest of whatever is genuinely new. When nothing is
 new, no email is sent, so a message in your inbox always means something
@@ -26,7 +26,7 @@ Both come out of one pipeline. Adding a rule means writing a predicate over
 events, not another scanner.
 
 ```
-watches.yaml ──> Source.fetch() ──> diff against log ──> events
+watches.yaml ──> Platform.fetch() ──> diff against log ──> events
                  (vinted,                                  │
                   shopify)                                 ├─> append to JSONL
                                                            └─> rules ──> email
@@ -150,21 +150,21 @@ That database is deliberately not committed. It is a cache built from the log,
 so a schema change is a rebuild rather than a migration, and you can delete it
 whenever you like.
 
-## Adding a source
+## Adding a platform
 
-A source is a pure function of its query. It reports what it can currently see
+A platform adapter is a pure function of its query. It reports what it can currently see
 and owns no state at all, which means it has no cursor and therefore cannot get
 cursor handling wrong. The core does every bit of the diffing.
 
 ```python
-class MySource:
-    name = "mysource"
+class MyPlatform:
+    name = "myplatform"
 
     def fetch(self, query: dict, session: requests.Session) -> list[Observation]:
         ...
 ```
 
-Register it in `src/scanner/sources/__init__.py`, record a fixture under
+Register it in `src/scanner/platforms/__init__.py`, record a fixture under
 `tests/fixtures/`, and write tests against that fixture. The suite never opens a
 socket, so it cannot fail because a retailer is having a bad day.
 
@@ -175,8 +175,8 @@ constantly, so diffing either would manufacture change events forever.
 ## Layout
 
 ```
-src/scanner/          scan logic, sources, storage, notifiers
-  sources/            one module per site, plus the shared Vinted field table
+src/scanner/          scan logic, platform adapters, storage, notifiers
+  platforms/          one adapter per site, plus the shared Vinted field table
   notify/             email and console adapters
 ui/                   React page deployed to GitHub Pages
 data/observations/    the event log, one JSONL file per month
@@ -192,15 +192,15 @@ under load and occasionally skips. This is a digest of what appeared recently,
 not a sniping tool.
 
 Vinted's API is undocumented and will break sooner or later. A failing watch
-fails alone and the others still report, so a broken source degrades the
+fails alone and the others still report, so a broken platform degrades the
 scanner rather than stopping it.
 
-Dedup is on `(source, item id)`. Sellers relist constantly and a relisted item
+Dedup is on `(platform, item id)`. Sellers relist constantly and a relisted item
 gets a fresh id, so you will occasionally see the same garment twice. That is
 the deliberate trade: better a duplicate than a listing you never hear about.
 
 Two of the retailers worth watching are stock Shopify and serve an
-unauthenticated product feed, which is why the Shopify source needs no scraping
+unauthenticated product feed, which is why the Shopify platform needs no scraping
 at all. Patagonia runs Salesforce Commerce Cloud and Lululemon sits behind bot
 protection, so both will need adapters of their own.
 
