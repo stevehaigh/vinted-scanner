@@ -62,6 +62,21 @@ class TestVinted:
             VintedSource().fetch({}, session)
 
 
+class TestVintedHosts:
+    def test_an_unknown_host_is_refused_before_any_request(self):
+        session = FakeSession({})
+
+        with pytest.raises(SourceError, match="not a known Vinted site"):
+            VintedSource().fetch({"host": "evil.example", "search_text": "x"}, session)
+
+        assert session.calls == []
+
+    def test_the_host_header_is_left_to_requests(self, vinted_session):
+        VintedSource().fetch({"host": "www.vinted.co.uk", "search_text": "x"}, vinted_session)
+
+        assert "Host" not in vinted_session.headers
+
+
 class TestVintedUrlImport:
     def test_parses_a_pasted_search_url(self):
         query = parse_search_url(
@@ -175,7 +190,11 @@ class TestShopifyPagination:
     variants per product, and most have one variant per size.
     """
 
-    def _store(self, products_per_page: int, variants_each: int):
+    @staticmethod
+    def _store(total_products: int, variants_each: int):
+        """A fake storefront that pages exactly the way Shopify does: offset
+        ``(page - 1) * limit``, so a smaller limit re-reads earlier products."""
+
         def product(n: int):
             return {
                 "id": n,
@@ -183,35 +202,55 @@ class TestShopifyPagination:
                 "title": f"Product {n}",
                 "images": [{"src": "x"}],
                 "variants": [
-                    {"id": n * 100 + v, "price": "10.00", "available": True}
+                    {"id": n * 1000 + v, "price": "10.00", "available": True}
                     for v in range(variants_each)
                 ],
             }
 
-        pages = {}
-        for page in range(1, 4):
-            start = (page - 1) * products_per_page
-            pages[page] = [product(start + i) for i in range(products_per_page)]
-        return pages
-
-    def test_pages_until_the_product_cap_is_reached(self):
-        pages = self._store(products_per_page=2, variants_each=6)
+        products = [product(n) for n in range(total_products)]
         calls = []
 
         class Paging(FakeSession):
             def get(self, url, params=None, **kw):
-                calls.append(params or {})
-                page = (params or {}).get("page", 1)
-                return FakeResponse({"products": pages.get(page, [])})
+                params = params or {}
+                calls.append(params)
+                limit, page = params["limit"], params["page"]
+                return FakeResponse({"products": products[(page - 1) * limit : page * limit]})
 
-        session = Paging({})
+        return Paging({}), calls
+
+    def test_pages_until_the_product_cap_is_reached(self):
+        session, calls = self._store(total_products=600, variants_each=2)
+
         observations = ShopifySource().fetch(
-            {"base_url": "https://example.com", "max_products": 4}, session
+            {"base_url": "https://example.com", "max_products": 300}, session
         )
 
-        # Two pages of two products, six variants each: 24 observations.
+        # 300 products, two variants each, and never a product seen twice.
         assert len(calls) == 2
-        assert len(observations) == 24
+        assert len(observations) == 600
+        assert len({o.entity_key for o in observations}) == 600
+        assert {o.entity_key.split(":")[0] for o in observations} == {str(n) for n in range(300)}
+
+    def test_a_short_page_is_the_last_page(self):
+        session, calls = self._store(total_products=30, variants_each=1)
+
+        observations = ShopifySource().fetch({"base_url": "https://example.com"}, session)
+
+        assert len(calls) == 1
+        assert len(observations) == 30
+
+    def test_a_non_numeric_cap_is_a_source_error(self, shopify_session):
+        with pytest.raises(SourceError, match="max_products"):
+            ShopifySource().fetch(
+                {"base_url": "https://example.com", "max_products": "all"}, shopify_session
+            )
+
+    def test_a_feed_that_is_not_an_object_is_a_source_error(self):
+        session = FakeSession({"products.json": []})
+
+        with pytest.raises(SourceError, match="product list"):
+            ShopifySource().fetch({"base_url": "https://example.com"}, session)
 
     def test_stops_when_a_page_comes_back_empty(self):
         class Empty(FakeSession):

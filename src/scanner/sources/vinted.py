@@ -68,7 +68,7 @@ def build_api_params(query: dict[str, Any]) -> dict[str, Any]:
             continue
         params[field["name"]] = ",".join(str(v) for v in value) if field["list"] else value
 
-    params["page"] = query.get("page", 1)
+    params["page"] = 1
     params["per_page"] = query.get("per_page", params_spec()["defaults"]["per_page"])
     return params
 
@@ -85,6 +85,10 @@ class VintedSource:
 
     def fetch(self, query: dict[str, Any], session: requests.Session) -> list[Observation]:
         host = query.get("host") or DEFAULT_HOST
+        if host not in params_spec()["hosts"]:
+            raise SourceError(
+                f"{host!r} is not a known Vinted site; add it to vinted_params.json if it should be"
+            )
         self._prime(session, host)
 
         response = session.get(
@@ -99,6 +103,8 @@ class VintedSource:
             items = response.json()["items"]
         except (ValueError, KeyError, TypeError) as exc:
             raise SourceError(f"vinted {host} returned unexpected JSON: {exc}") from exc
+        if not isinstance(items, list):
+            raise SourceError(f"vinted {host} returned no item list")
 
         return [self._to_observation(item, host) for item in items]
 
@@ -112,7 +118,6 @@ class VintedSource:
         session.headers["User-Agent"] = BROWSER_USER_AGENT
         session.headers["Accept"] = "application/json, text/plain, */*"
         session.headers["Accept-Language"] = "en-GB,en;q=0.9"
-        session.headers["Host"] = host
         try:
             session.get(f"https://{host}/", timeout=TIMEOUT)
         except requests.RequestException as exc:
