@@ -38,10 +38,10 @@ export default function App() {
         );
         setSha(file.sha);
       }
-      const log = await gh.readFile(gh.currentMonthPath());
+      const log = await gh.readRaw(gh.currentMonthPath());
       setEvents(
         log
-          ? log.text
+          ? log
               .trim()
               .split("\n")
               .filter(Boolean)

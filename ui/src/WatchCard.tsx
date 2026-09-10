@@ -10,6 +10,7 @@ interface Props {
 const SHOPIFY_FIELDS = [
   { name: "base_url", label: "Store URL", input: "text" },
   { name: "collection", label: "Collection", input: "text" },
+  { name: "currency", label: "Currency", input: "text" },
   { name: "max_products", label: "Max products", input: "number" },
 ];
 

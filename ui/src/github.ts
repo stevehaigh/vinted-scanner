@@ -91,6 +91,17 @@ export async function readFile(path: string): Promise<FileContent | null> {
   return { text: new TextDecoder().decode(bytes), sha: body.sha };
 }
 
+/** Plain text, for files the JSON Contents API refuses to inline (over 1 MB). */
+export async function readRaw(path: string): Promise<string | null> {
+  const response = await fetch(`${API}/repos/${getRepo()}/contents/${path}`, {
+    headers: { ...headers(), Accept: "application/vnd.github.raw+json" },
+    cache: "no-store",
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) await fail(response, `Reading ${path}`);
+  return response.text();
+}
+
 export async function writeFile(
   path: string,
   text: string,
