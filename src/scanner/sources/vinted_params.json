@@ -1,0 +1,23 @@
+{
+  "_comment": "Single source of truth for Vinted query shape. Consumed by the Python URL parser and by the TypeScript UI, so the two cannot drift.",
+  "fields": [
+    { "name": "search_text",   "url_param": "search_text",    "list": false, "label": "Search text",   "input": "text" },
+    { "name": "catalog_ids",   "url_param": "catalog[]",      "list": true,  "label": "Catalog IDs",   "input": "ids" },
+    { "name": "brand_ids",     "url_param": "brand_ids[]",    "list": true,  "label": "Brand IDs",     "input": "ids" },
+    { "name": "size_ids",      "url_param": "size_ids[]",     "list": true,  "label": "Size IDs",      "input": "ids" },
+    { "name": "status_ids",    "url_param": "status_ids[]",   "list": true,  "label": "Condition IDs", "input": "ids" },
+    { "name": "color_ids",     "url_param": "color_ids[]",    "list": true,  "label": "Colour IDs",    "input": "ids" },
+    { "name": "material_ids",  "url_param": "material_ids[]", "list": true,  "label": "Material IDs",  "input": "ids" },
+    { "name": "country_ids",   "url_param": "country_ids[]",  "list": true,  "label": "Country IDs",   "input": "ids" },
+    { "name": "price_from",    "url_param": "price_from",     "list": false, "label": "Min price",     "input": "number" },
+    { "name": "price_to",      "url_param": "price_to",       "list": false, "label": "Max price",     "input": "number" },
+    { "name": "currency",      "url_param": "currency",       "list": false, "label": "Currency",      "input": "text" },
+    { "name": "order",         "url_param": "order",          "list": false, "label": "Order",         "input": "text" }
+  ],
+  "defaults": { "order": "newest_first", "per_page": 40 },
+  "hosts": [
+    "www.vinted.co.uk", "www.vinted.fr", "www.vinted.de", "www.vinted.nl",
+    "www.vinted.es", "www.vinted.it", "www.vinted.pl", "www.vinted.be",
+    "www.vinted.at", "www.vinted.cz", "www.vinted.com"
+  ]
+}
