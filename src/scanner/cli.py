@@ -74,6 +74,7 @@ def _dispatch(args: argparse.Namespace) -> int:
 def _scan(args: argparse.Namespace) -> int:
     config = config_module.load(args.config)
     store = Store(args.data_dir)
+    weekday = _heartbeat_weekday(os.environ.get("HEARTBEAT_WEEKDAY"))
 
     if args.dry_run:
         # A scratch store keeps a dry run from touching the real log.
@@ -91,6 +92,7 @@ def _scan(args: argparse.Namespace) -> int:
                 store=scratch,
                 notifier=ConsoleNotifier(),
                 now=datetime.now(UTC),
+                heartbeat_weekday=weekday,
             )
     else:
         settings = EmailSettings.from_env()
@@ -102,13 +104,12 @@ def _scan(args: argparse.Namespace) -> int:
             logging.getLogger("scanner").warning(
                 "GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set - nothing will be sent"
             )
-        weekday = os.environ.get("HEARTBEAT_WEEKDAY")
         report = run_scan(
             config=config,
             store=store,
             notifier=notifier,
             now=datetime.now(UTC),
-            heartbeat_weekday=int(weekday) if weekday not in (None, "") else None,
+            heartbeat_weekday=weekday,
         )
 
     print(
@@ -124,6 +125,14 @@ def _scan(args: argparse.Namespace) -> int:
     if report.failures and len(report.failures) == report.scanned:
         return 1
     return 0
+
+
+def _heartbeat_weekday(raw: str | None) -> int | None:
+    if raw in (None, ""):
+        return None
+    if not raw.isdigit() or int(raw) > 6:
+        raise config_module.ConfigError(f"HEARTBEAT_WEEKDAY must be 0 (Monday) to 6, not {raw!r}")
+    return int(raw)
 
 
 def _list(path: Path) -> int:

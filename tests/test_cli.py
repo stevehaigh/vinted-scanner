@@ -114,3 +114,11 @@ def test_a_failed_send_is_one_line_and_a_non_zero_exit(monkeypatch, tmp_path, ca
 
     assert main(["--data-dir", str(tmp_path), "scan"]) == 1
     assert "email error: could not send mail: boom" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("raw", ["sunday", "7", "-1"])
+def test_a_bad_heartbeat_weekday_is_a_config_error(monkeypatch, tmp_path, capsys, raw):
+    monkeypatch.setenv("HEARTBEAT_WEEKDAY", raw)
+
+    assert main(["--data-dir", str(tmp_path), "scan", "--dry-run"]) == 2
+    assert "HEARTBEAT_WEEKDAY" in capsys.readouterr().err
