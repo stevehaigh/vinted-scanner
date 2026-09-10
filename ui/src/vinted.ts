@@ -16,7 +16,6 @@ interface Field {
 }
 
 export const FIELDS: Field[] = spec.fields;
-export const HOSTS: string[] = spec.hosts;
 export const DEFAULTS: Record<string, string | number> = spec.defaults;
 
 export function parseSearchUrl(raw: string): Query {

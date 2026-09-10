@@ -46,6 +46,7 @@ export default function WatchCard({ watch, onChange, onRemove }: Props) {
           <input
             type="checkbox"
             checked={watch.enabled}
+            aria-label={`Enable ${watch.id}`}
             onChange={(e) => set({ enabled: e.target.checked })}
           />
         </label>

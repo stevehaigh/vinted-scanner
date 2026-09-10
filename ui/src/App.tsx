@@ -8,6 +8,25 @@ import type { ScanEvent, Watch, WatchFile } from "./types";
 
 const WATCHES_PATH = "watches.yaml";
 
+/** The scanner accepts `notify_on: price_drop` as shorthand for a one-item list. */
+function asList(value: string | string[]): string[] {
+  return Array.isArray(value) ? value : [value];
+}
+
+/** What scanner.config.parse would reject, caught before it can break every scan. */
+function invalidWatches(watches: Watch[]): string {
+  const seen = new Set<string>();
+  for (const w of watches) {
+    const id = w.id.trim();
+    if (!id) return "Every watch needs an ID.";
+    if (seen.has(id)) return `Two watches share the ID "${id}".`;
+    seen.add(id);
+    if (w.source === "shopify" && !String(w.query.base_url ?? "").trim())
+      return `Watch "${id}" needs a store URL.`;
+  }
+  return "";
+}
+
 type Tab = "watches" | "finds";
 
 export default function App() {
@@ -26,19 +45,21 @@ export default function App() {
     setBusy(true);
     setError("");
     try {
-      const file = await gh.readFile(WATCHES_PATH);
+      const [file, log] = await Promise.all([
+        gh.readFile(WATCHES_PATH),
+        gh.readRaw(gh.currentMonthPath()),
+      ]);
       if (file) {
         const parsed = yaml.load(file.text) as WatchFile;
         setWatches(
           (parsed?.watches ?? []).map((w) => ({
             ...w,
             enabled: w.enabled ?? true,
-            notify_on: w.notify_on ?? parsed?.defaults?.notify_on ?? ["new_listing"],
+            notify_on: asList(w.notify_on ?? parsed?.defaults?.notify_on ?? ["new_listing"]),
           })),
         );
         setSha(file.sha);
       }
-      const log = await gh.readRaw(gh.currentMonthPath());
       setEvents(
         log
           ? log
@@ -78,6 +99,11 @@ export default function App() {
   };
 
   const save = async () => {
+    const problem = invalidWatches(watches);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -148,7 +174,7 @@ export default function App() {
     <div className="wrap">
       <header>
         <h1>Scanner</h1>
-        <span className="repo">{gh.getRepo()}</span>
+        <span className="repo">{gh.REPO}</span>
       </header>
 
       <nav>
