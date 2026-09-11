@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from .models import Event
 
@@ -13,7 +13,6 @@ class Digest:
     subject: str
     text_body: str
     html_body: str = ""
-    events: tuple[Event, ...] = field(default_factory=tuple)
 
 
 def _price(event: Event) -> str:
@@ -121,7 +120,6 @@ def build(events: list[Event], *, watch_labels: dict[str, str] | None = None) ->
         subject=subject,
         text_body="\n".join(text_lines).rstrip() + "\n",
         html_body="".join(html_parts),
-        events=tuple(events),
     )
 
 

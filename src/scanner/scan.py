@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 
 import requests
 
 from . import digest as digest_module
 from . import rules
-from .models import Config, Event, RunReport, WatchFailure
+from .models import Config, Event, Observation, RunReport, Watch, WatchFailure
+from .notify import Notifier
 from .sources import SourceError, get_source
 from .store import Store, diff
 
@@ -28,7 +30,7 @@ def run_scan(
     *,
     config: Config,
     store: Store,
-    notifier: object | None,
+    notifier: Notifier | None,
     now: datetime,
     session_factory: SessionFactory = requests.Session,
     heartbeat_weekday: int | None = None,
@@ -36,8 +38,10 @@ def run_scan(
     report = RunReport()
     known = store.latest_attributes()
     labels = {watch.id: watch.display_name for watch in config.watches}
-    fresh_events: list[Event] = []
 
+    # Fetch everything before diffing anything, so an entity that two watches
+    # both see is recorded once but credited to every watch that saw it.
+    fetched: list[tuple[Watch, list[Observation]]] = []
     for watch in config.enabled_watches:
         report.scanned += 1
         try:
@@ -54,7 +58,19 @@ def run_scan(
             continue
 
         report.observed += len(observations)
-        events = diff(observations, known, at=now, watch_id=watch.id)
+        fetched.append((watch, observations))
+
+    seen_by: dict[tuple[str, str], list[str]] = {}
+    for watch, observations in fetched:
+        for observation in observations:
+            seen_by.setdefault(observation.identity, []).append(watch.id)
+
+    fresh_events: list[Event] = []
+    for watch, observations in fetched:
+        events = [
+            replace(event, seen_by=tuple(seen_by[event.observation.identity]))
+            for event in diff(observations, known, at=now, watch_id=watch.id)
+        ]
         fresh_events.extend(events)
         log.info(
             "watch %s: %d observed, %d new, %d changed",
@@ -76,7 +92,7 @@ def run_scan(
 def _notify(
     config: Config,
     store: Store,
-    notifier: object | None,
+    notifier: Notifier | None,
     report: RunReport,
     labels: dict[str, str],
     now: datetime,
@@ -88,9 +104,9 @@ def _notify(
     """
     notify_on = {watch.id: watch.notify_on for watch in config.watches}
     pending = [
-        event
+        credited
         for event in store.events_after(store.notified_through)
-        if rules.select([event], notify_on.get(event.watch_id, ("new_listing",)))
+        if (credited := _credit(event, notify_on)) is not None
     ]
     report.notified = pending
     if not pending:
@@ -104,10 +120,22 @@ def _notify(
     store.mark_notified_through(now)
 
 
+def _credit(event: Event, notify_on: dict[str, tuple[str, ...]]) -> Event | None:
+    """The event as the first watch whose rules select it would report it.
+
+    ``watch_id`` is whichever watch happened to run first; a second watch that
+    also saw the entity may be the one that actually asked to hear about it.
+    """
+    for watch_id in dict.fromkeys((event.watch_id, *event.seen_by)):
+        if rules.select([event], notify_on.get(watch_id, ("new_listing",))):
+            return event if watch_id == event.watch_id else replace(event, watch_id=watch_id)
+    return None
+
+
 def _heartbeat(
     config: Config,
     store: Store,
-    notifier: object | None,
+    notifier: Notifier | None,
     report: RunReport,
     now: datetime,
     weekday: int | None,

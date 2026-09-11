@@ -262,3 +262,55 @@ class TestHeartbeat:
                       notifier, heartbeat_weekday=6)
 
         assert not report.heartbeat_sent
+
+
+class TestOverlappingWatches:
+    """Two watches can see the same listing. The log records it once, but the
+    watch that asked to hear about it is the one that should be told."""
+
+    def test_the_second_watch_still_gets_its_notification(self, tmp_path, catalog, now):
+        config = parse(
+            {
+                "watches": [
+                    {
+                        "id": "drops",
+                        "source": "vinted",
+                        "query": {"search_text": "patagonia"},
+                        "notify_on": ["price_drop"],
+                    },
+                    {
+                        "id": "fleeces",
+                        "label": "Fleeces",
+                        "source": "vinted",
+                        "query": {"search_text": "patagonia fleece"},
+                        "notify_on": ["new_listing"],
+                    },
+                ]
+            }
+        )
+        notifier = CapturingNotifier()
+        session = FakeSession({"catalog/items": catalog})
+
+        report = scan(config, Store(tmp_path), session, now, notifier)
+
+        # Recorded once, under the watch that ran first, but seen by both.
+        assert len(report.appeared) == len(catalog["items"])
+        assert {e.watch_id for e in report.appeared} == {"drops"}
+        assert all(e.seen_by == ("drops", "fleeces") for e in report.appeared)
+        # Notified under the watch whose rule matched.
+        assert {e.watch_id for e in report.notified} == {"fleeces"}
+        assert "Fleeces" in notifier.sent[0].subject
+
+    def test_seen_by_survives_the_log(self, tmp_path, catalog, now):
+        config = parse(
+            {
+                "watches": [
+                    {"id": "a", "source": "vinted", "query": {"search_text": "x"}},
+                    {"id": "b", "source": "vinted", "query": {"search_text": "y"}},
+                ]
+            }
+        )
+        store = Store(tmp_path)
+        scan(config, store, FakeSession({"catalog/items": catalog}), now)
+
+        assert all(e.seen_by == ("a", "b") for e in store.read_events())

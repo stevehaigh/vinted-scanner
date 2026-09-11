@@ -81,3 +81,19 @@ def test_missing_file_is_a_config_error(tmp_path):
 def test_the_repo_config_is_valid():
     # The committed watches.yaml must always parse, or every scan fails.
     assert load("watches.yaml").watches
+
+
+def test_an_empty_notify_on_means_record_but_never_email():
+    assert parse(minimal(notify_on=[])).watches[0].notify_on == ()
+
+
+def test_ids_are_compared_as_strings():
+    raw = {"watches": [minimal()["watches"][0] | {"id": 1}, minimal()["watches"][0] | {"id": "1"}]}
+
+    with pytest.raises(ConfigError, match="duplicate"):
+        parse(raw)
+
+
+def test_defaults_must_be_a_mapping():
+    with pytest.raises(ConfigError, match="defaults"):
+        parse({"defaults": "price_drop", "watches": minimal()["watches"]})

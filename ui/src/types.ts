@@ -11,8 +11,11 @@ export interface Watch {
 
 export interface WatchFile {
   version?: number;
-  defaults?: { notify_on?: string[] };
-  watches: Watch[];
+  defaults?: { notify_on?: string | string[] };
+  watches: (Omit<Watch, "notify_on" | "enabled"> & {
+    notify_on?: string | string[];
+    enabled?: boolean;
+  })[];
 }
 
 /** One line of data/observations/YYYY-MM.jsonl. */

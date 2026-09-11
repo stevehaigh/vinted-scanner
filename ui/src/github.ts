@@ -8,9 +8,8 @@
 
 const API = "https://api.github.com";
 const TOKEN_KEY = "scanner.token";
-const REPO_KEY = "scanner.repo";
 
-export const DEFAULT_REPO = (import.meta.env.VITE_REPO as string) ?? "stevehaigh/vinted-scanner";
+export const REPO = (import.meta.env.VITE_REPO as string) ?? "stevehaigh/vinted-scanner";
 
 export function getToken(): string {
   try {
@@ -25,22 +24,6 @@ export function setToken(token: string): void {
     token ? localStorage.setItem(TOKEN_KEY, token) : localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* private browsing; the app still works read-only for a public repo */
-  }
-}
-
-export function getRepo(): string {
-  try {
-    return localStorage.getItem(REPO_KEY) || DEFAULT_REPO;
-  } catch {
-    return DEFAULT_REPO;
-  }
-}
-
-export function setRepo(repo: string): void {
-  try {
-    localStorage.setItem(REPO_KEY, repo);
-  } catch {
-    /* ignore */
   }
 }
 
@@ -78,7 +61,7 @@ async function fail(response: Response, what: string): Promise<never> {
 
 /** Returns null when the file does not exist, which is not an error. */
 export async function readFile(path: string): Promise<FileContent | null> {
-  const response = await fetch(`${API}/repos/${getRepo()}/contents/${path}`, {
+  const response = await fetch(`${API}/repos/${REPO}/contents/${path}`, {
     headers: headers(),
     cache: "no-store",
   });
@@ -93,7 +76,7 @@ export async function readFile(path: string): Promise<FileContent | null> {
 
 /** Plain text, for files the JSON Contents API refuses to inline (over 1 MB). */
 export async function readRaw(path: string): Promise<string | null> {
-  const response = await fetch(`${API}/repos/${getRepo()}/contents/${path}`, {
+  const response = await fetch(`${API}/repos/${REPO}/contents/${path}`, {
     headers: { ...headers(), Accept: "application/vnd.github.raw+json" },
     cache: "no-store",
   });
@@ -111,7 +94,7 @@ export async function writeFile(
   if (!getToken()) throw new GitHubError("Add a GitHub token before saving.", 401);
 
   const content = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
-  const response = await fetch(`${API}/repos/${getRepo()}/contents/${path}`, {
+  const response = await fetch(`${API}/repos/${REPO}/contents/${path}`, {
     method: "PUT",
     headers: { ...headers(), "Content-Type": "application/json" },
     body: JSON.stringify({ message, content, ...(sha ? { sha } : {}) }),

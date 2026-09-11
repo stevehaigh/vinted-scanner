@@ -34,6 +34,8 @@ def parse(raw: dict[str, Any]) -> Config:
         raise ConfigError("config must be a mapping")
 
     defaults = raw.get("defaults") or {}
+    if not isinstance(defaults, dict):
+        raise ConfigError("'defaults' must be a mapping")
     entries = raw.get("watches")
     if not isinstance(entries, list):
         raise ConfigError("config needs a 'watches' list")
@@ -48,7 +50,7 @@ def parse(raw: dict[str, Any]) -> Config:
         if not isinstance(entry, dict):
             raise ConfigError(f"{where} must be a mapping")
 
-        watch_id = entry.get("id")
+        watch_id = str(entry.get("id") or "").strip()
         if not watch_id:
             raise ConfigError(f"{where} needs an 'id'")
         if watch_id in seen:
@@ -66,7 +68,13 @@ def parse(raw: dict[str, Any]) -> Config:
         if not isinstance(query, dict):
             raise ConfigError(f"{where} ({watch_id}) needs a 'query' mapping")
 
-        notify_on = entry.get("notify_on") or defaults.get("notify_on") or ["new_listing"]
+        # An explicit empty list means "record, never email" - only a missing
+        # key falls through to the defaults.
+        notify_on = entry.get("notify_on")
+        if notify_on is None:
+            notify_on = defaults.get("notify_on")
+        if notify_on is None:
+            notify_on = ["new_listing"]
         if isinstance(notify_on, str):
             notify_on = [notify_on]
         unknown = [name for name in notify_on if name not in known_rules]

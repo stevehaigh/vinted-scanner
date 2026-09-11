@@ -47,6 +47,9 @@ class Event:
     observation: Observation
     #: attribute name -> (before, after). Empty for ``appeared``.
     changes: dict[str, tuple[Any, Any]] = field(default_factory=dict)
+    #: Every enabled watch that observed the entity in this run. ``watch_id`` is
+    #: only the first of them; notification rules are applied for all of them.
+    seen_by: tuple[str, ...] = ()
 
     def to_json_line(self) -> str:
         payload = {
@@ -60,6 +63,7 @@ class Event:
             "attributes": self.observation.attributes,
             "extra": self.observation.extra,
             "changes": {k: list(v) for k, v in self.changes.items()},
+            "seen_by": list(self.seen_by),
         }
         return json.dumps(payload, sort_keys=True, ensure_ascii=False)
 
@@ -79,6 +83,7 @@ class Event:
                 extra=raw.get("extra", {}),
             ),
             changes={k: (v[0], v[1]) for k, v in raw.get("changes", {}).items()},
+            seen_by=tuple(raw.get("seen_by", [])),
         )
 
 

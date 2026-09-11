@@ -39,7 +39,12 @@ class ShopifySource:
         collection = query.get("collection", "all")
         # products.json carries no currency, so the watch declares it.
         currency = query.get("currency", "GBP")
-        limit = int(query.get("max_products", PAGE_SIZE))
+        try:
+            limit = int(query.get("max_products", PAGE_SIZE))
+        except (TypeError, ValueError):
+            raise SourceError(
+                f"shopify max_products must be a whole number, not {query.get('max_products')!r}"
+            ) from None
         path = f"/collections/{collection}/products.json" if collection else "/products.json"
 
         # Assigned, not setdefault: a fresh Session already has a
@@ -50,31 +55,33 @@ class ShopifySource:
         observations: list[Observation] = []
         fetched = 0
         for page in range(1, MAX_PAGES + 1):
-            # Page on *products*, which is what the API counts. Paging on
-            # observations would stop early on any store with several variants
-            # per product - and most have one per size.
-            remaining = limit - fetched
-            if remaining <= 0:
-                break
-
+            # Always ask for a full page: Shopify offsets by page * limit, so
+            # shrinking the limit part-way through would re-read products
+            # already seen and never reach the tail. The cap is applied to what
+            # comes back. It counts *products*, which is what the API pages on;
+            # counting observations would stop early on any store with several
+            # variants per product, and most have one per size.
             response = session.get(
                 f"{base}{path}",
-                params={"limit": min(PAGE_SIZE, remaining), "page": page},
+                params={"limit": PAGE_SIZE, "page": page},
                 timeout=TIMEOUT,
             )
             if response.status_code != 200:
                 raise SourceError(f"shopify {base} returned HTTP {response.status_code}")
 
             try:
-                products = response.json().get("products", [])
+                payload = response.json()
             except ValueError as exc:
                 raise SourceError(f"shopify {base} returned unexpected JSON: {exc}") from exc
+            products = payload.get("products") if isinstance(payload, dict) else None
+            if not isinstance(products, list):
+                raise SourceError(f"shopify {base} returned no product list")
 
-            if not products:
-                break
-            fetched += len(products)
-            for product in products:
+            for product in products[: limit - fetched]:
                 observations.extend(self._observations_for(product, base, currency))
+            fetched += min(len(products), limit - fetched)
+            if fetched >= limit or len(products) < PAGE_SIZE:
+                break
 
         return observations
 
