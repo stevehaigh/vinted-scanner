@@ -129,6 +129,8 @@ class VintedPlatform:
             found = response.json()["brands"]
         except (ValueError, KeyError, TypeError) as exc:
             raise PlatformError(f"vinted {host} returned unexpected JSON: {exc}") from exc
+        if not isinstance(found, list):
+            raise PlatformError(f"vinted {host} returned no brand list")
         return [(int(b["id"]), str(b["title"])) for b in found if isinstance(b, dict)]
 
     def _prime(self, session: requests.Session, host: str) -> None:

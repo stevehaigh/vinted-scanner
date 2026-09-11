@@ -52,7 +52,8 @@ def parse(raw: dict[str, Any]) -> Config:
         if not isinstance(entry, dict):
             raise ConfigError(f"{where} must be a mapping")
 
-        watch_id = str(entry.get("id") or "").strip()
+        raw_id = entry.get("id")
+        watch_id = "" if raw_id is None else str(raw_id).strip()
         if not watch_id:
             raise ConfigError(f"{where} needs an 'id'")
         if watch_id in seen:

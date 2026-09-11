@@ -113,3 +113,7 @@ def test_a_falsy_non_mapping_defaults_is_still_rejected():
 def test_the_old_source_key_gets_a_pointer_to_the_new_name():
     with pytest.raises(ConfigError, match="now called 'platform'"):
         parse({"watches": [{"id": "w", "source": "vinted", "query": {}}]})
+
+
+def test_a_numeric_zero_id_is_a_valid_id():
+    assert parse(minimal(id=0)).watches[0].id == "0"

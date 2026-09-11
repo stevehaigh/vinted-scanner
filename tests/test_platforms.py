@@ -248,7 +248,7 @@ class TestShopifyPagination:
         assert len(calls) == 1
         assert len(observations) == 30
 
-    @pytest.mark.parametrize("cap", [0, -1, "all"])
+    @pytest.mark.parametrize("cap", [0, -1, "all", 1.5, True, None])
     def test_a_cap_below_one_is_a_platform_error(self, shopify_session, cap):
         with pytest.raises(PlatformError, match="max_products"):
             ShopifyPlatform().fetch(
@@ -319,6 +319,12 @@ class TestVintedBrandLookup:
         VintedPlatform().brands("x", vinted_session)
 
         assert vinted_session.calls[0][0] == "https://www.vinted.co.uk/"
+
+    def test_a_brand_list_that_is_not_a_list_is_a_platform_error(self):
+        session = FakeSession({"/api/v2/brands": {"brands": {"id": 1}}})
+
+        with pytest.raises(PlatformError, match="no brand list"):
+            VintedPlatform().brands("x", session)
 
     def test_a_missing_brand_list_is_a_platform_error(self):
         session = FakeSession({"/api/v2/brands": {"nope": 1}})

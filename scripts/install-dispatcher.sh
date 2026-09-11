@@ -28,6 +28,9 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 INTERVAL="${1:-300}"
+case "$INTERVAL" in
+  ''|*[!0-9]*|0*) echo "interval must be a positive whole number of seconds, not '$INTERVAL'" >&2; exit 1;;
+esac
 GH="$(command -v gh)" || { echo "gh is not installed (brew install gh)" >&2; exit 1; }
 "$GH" auth status >/dev/null 2>&1 || { echo "gh is not signed in: run 'gh auth login'" >&2; exit 1; }
 

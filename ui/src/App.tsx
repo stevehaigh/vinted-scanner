@@ -22,7 +22,8 @@ function invalidWatches(watches: Watch[]): string {
     if (!id) return "Every watch needs an ID.";
     if (seen.has(id)) return `Two watches share the ID "${id}".`;
     seen.add(id);
-    if (w.platform === "shopify" && !String(w.query?.base_url ?? "").trim())
+    if (!w.query || typeof w.query !== "object") return `Watch "${id}" needs a query.`;
+    if (w.platform === "shopify" && !String(w.query.base_url ?? "").trim())
       return `Watch "${id}" needs a store URL.`;
   }
   return "";
