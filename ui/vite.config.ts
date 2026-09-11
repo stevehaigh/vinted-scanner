@@ -7,7 +7,7 @@ const repo = (process.env.VITE_REPO ?? "stevehaigh/vinted-scanner").split("/")[1
 export default defineConfig({
   plugins: [react()],
   base: `/${repo}/`,
-  // The Vinted parameter table lives in the Python package: one platform of
+  // The Vinted parameter table lives in the Python package: one source of
   // truth for both parsers, so they cannot drift.
   server: { fs: { allow: [".."] } },
 });

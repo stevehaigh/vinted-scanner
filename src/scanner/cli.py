@@ -15,9 +15,9 @@ import requests
 from . import config as config_module
 from . import db as db_module
 from .notify import ConsoleNotifier, EmailError, EmailNotifier, EmailSettings
-from .scan import run_scan
 from .platforms.base import PlatformError
 from .platforms.vinted import DEFAULT_HOST, VintedPlatform, parse_search_url
+from .scan import run_scan
 from .store import Store
 
 DEFAULT_DATA_DIR = Path("data")
