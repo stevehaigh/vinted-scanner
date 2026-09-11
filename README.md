@@ -60,6 +60,22 @@ The scan workflow re-enables itself on every run. GitHub disables scheduled
 workflows after 60 days without repository activity, and that step resets the
 timer.
 
+### Running more often than GitHub's scheduler allows
+
+GitHub throttles `schedule:` triggers on quiet repositories to a run every few
+hours, whatever the cron says. A `workflow_dispatch` is not throttled, so a Mac
+that is usually on can do the timing while GitHub still does the work:
+
+```bash
+gh auth login                          # once, on the Mac
+scripts/install-dispatcher.sh          # every 5 minutes; pass seconds to change
+scripts/install-dispatcher.sh --uninstall
+```
+
+That installs a launchd agent that runs `gh workflow run scan.yml` on an
+interval. Nothing else changes: the log, the secrets and the email all stay on
+GitHub, and the cron remains as a backstop for when the Mac is off.
+
 ## Adding a watch
 
 The quickest way is to search on Vinted until the results look right, then paste
