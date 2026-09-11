@@ -22,6 +22,7 @@ from .base import SourceError
 PARAMS_PATH = Path(__file__).with_name("vinted_params.json")
 DEFAULT_HOST = "www.vinted.co.uk"
 API_PATH = "/api/v2/catalog/items"
+BRANDS_PATH = "/api/v2/brands"
 TIMEOUT = 30
 
 BROWSER_USER_AGENT = (
@@ -107,6 +108,28 @@ class VintedSource:
             raise SourceError(f"vinted {host} returned no item list")
 
         return [self._to_observation(item, host) for item in items]
+
+    def brands(
+        self, keyword: str, session: requests.Session, host: str = DEFAULT_HOST
+    ) -> list[tuple[int, str]]:
+        """Look up ``(id, title)`` pairs by name, for filling in ``brand_ids``.
+
+        Vinted filters by brand id, not name, and the ids are not guessable:
+        Patagonia is 90804. Collaborations come back as separate brands.
+        """
+        if host not in params_spec()["hosts"]:
+            raise SourceError(f"{host!r} is not a known Vinted site")
+        self._prime(session, host)
+        response = session.get(
+            f"https://{host}{BRANDS_PATH}", params={"keyword": keyword}, timeout=TIMEOUT
+        )
+        if response.status_code != 200:
+            raise SourceError(f"vinted {host} returned HTTP {response.status_code}")
+        try:
+            found = response.json()["brands"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise SourceError(f"vinted {host} returned unexpected JSON: {exc}") from exc
+        return [(int(b["id"]), str(b["title"])) for b in found if isinstance(b, dict)]
 
     def _prime(self, session: requests.Session, host: str) -> None:
         """Visit the homepage so the API will talk to us.

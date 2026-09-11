@@ -122,3 +122,25 @@ def test_a_bad_heartbeat_weekday_is_a_config_error(monkeypatch, tmp_path, capsys
 
     assert main(["--data-dir", str(tmp_path), "scan", "--dry-run"]) == 2
     assert "HEARTBEAT_WEEKDAY" in capsys.readouterr().err
+
+
+def test_brands_prints_ids_to_paste_into_brand_ids(monkeypatch, capsys):
+    from conftest import FakeSession
+    from scanner import cli
+
+    session = FakeSession({"/api/v2/brands": {"brands": [{"id": 90804, "title": "Patagonia"}]}})
+    monkeypatch.setattr(cli.requests, "Session", lambda: session)
+
+    assert main(["brands", "patagonia"]) == 0
+    assert "90804  Patagonia" in capsys.readouterr().out
+
+
+def test_brands_with_no_match_exits_non_zero(monkeypatch, capsys):
+    from conftest import FakeSession
+    from scanner import cli
+
+    session = FakeSession({"/api/v2/brands": {"brands": []}})
+    monkeypatch.setattr(cli.requests, "Session", lambda: session)
+
+    assert main(["brands", "zzz"]) == 1
+    assert "no brands match" in capsys.readouterr().err
