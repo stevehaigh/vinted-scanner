@@ -39,9 +39,10 @@ class ShopifyPlatform:
         collection = query.get("collection", "all")
         # products.json carries no currency, so the watch declares it.
         currency = query.get("currency", "GBP")
+        # Via str() so that 1.5 and True are rejected rather than truncated.
         try:
-            limit = int(query.get("max_products", PAGE_SIZE))
-        except (TypeError, ValueError):
+            limit = int(str(query.get("max_products", PAGE_SIZE)))
+        except ValueError:
             limit = 0
         if limit < 1:
             raise PlatformError(
