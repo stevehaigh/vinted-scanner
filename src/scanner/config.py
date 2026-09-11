@@ -33,7 +33,9 @@ def parse(raw: dict[str, Any]) -> Config:
     if not isinstance(raw, dict):
         raise ConfigError("config must be a mapping")
 
-    defaults = raw.get("defaults") or {}
+    defaults = raw.get("defaults")
+    if defaults is None:
+        defaults = {}
     if not isinstance(defaults, dict):
         raise ConfigError("'defaults' must be a mapping")
     entries = raw.get("watches")
@@ -77,6 +79,8 @@ def parse(raw: dict[str, Any]) -> Config:
             notify_on = ["new_listing"]
         if isinstance(notify_on, str):
             notify_on = [notify_on]
+        if not isinstance(notify_on, list):
+            raise ConfigError(f"{where} ({watch_id}) notify_on must be a list of rule names")
         unknown = [name for name in notify_on if name not in known_rules]
         if unknown:
             raise ConfigError(

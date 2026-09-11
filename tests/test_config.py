@@ -97,3 +97,14 @@ def test_ids_are_compared_as_strings():
 def test_defaults_must_be_a_mapping():
     with pytest.raises(ConfigError, match="defaults"):
         parse({"defaults": "price_drop", "watches": minimal()["watches"]})
+
+
+@pytest.mark.parametrize("bad", [7, {}, {"a": 1}])
+def test_notify_on_must_be_a_list(bad):
+    with pytest.raises(ConfigError, match="notify_on must be a list"):
+        parse(minimal(notify_on=bad))
+
+
+def test_a_falsy_non_mapping_defaults_is_still_rejected():
+    with pytest.raises(ConfigError, match="defaults"):
+        parse({"defaults": [], "watches": minimal()["watches"]})
