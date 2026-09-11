@@ -10,7 +10,7 @@ from scanner.store import Store, diff
 
 def observation(key: str = "1", price: str = "10.00", **attrs) -> Observation:
     return Observation(
-        source="vinted",
+        platform="vinted",
         entity_key=key,
         url=f"https://example.com/{key}",
         title=f"Item {key}",
@@ -169,3 +169,14 @@ class TestState:
         reopened = Store(tmp_path)
         assert reopened.last_heartbeat == now.date()
         assert reopened.notified_through == now
+
+
+def test_log_lines_from_before_the_rename_still_read():
+    from scanner.models import Event
+
+    old = (
+        '{"at": "2026-09-10T08:18:19Z", "kind": "appeared", "watch_id": "w", '
+        '"source": "vinted", "entity_key": "1", "url": "u", "title": "t"}'
+    )
+
+    assert Event.from_json_line(old).observation.platform == "vinted"

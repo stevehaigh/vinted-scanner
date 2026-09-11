@@ -8,7 +8,7 @@ from scanner.config import ConfigError, load, parse
 
 
 def minimal(**overrides):
-    watch = {"id": "w", "source": "vinted", "query": {"search_text": "x"}, **overrides}
+    watch = {"id": "w", "platform": "vinted", "query": {"search_text": "x"}, **overrides}
     return {"watches": [watch]}
 
 
@@ -36,8 +36,8 @@ def test_a_watch_overrides_the_defaults():
 def test_enabled_watches_excludes_the_disabled_ones():
     raw = {
         "watches": [
-            {"id": "on", "source": "vinted", "query": {}},
-            {"id": "off", "source": "vinted", "query": {}, "enabled": False},
+            {"id": "on", "platform": "vinted", "query": {}},
+            {"id": "off", "platform": "vinted", "query": {}, "enabled": False},
         ]
     }
 
@@ -51,9 +51,9 @@ def test_enabled_watches_excludes_the_disabled_ones():
     ("raw", "message"),
     [
         ({"watches": "nope"}, "watches"),
-        ({"watches": [{"source": "vinted", "query": {}}]}, "id"),
-        ({"watches": [{"id": "w", "source": "ebay", "query": {}}]}, "unknown source"),
-        ({"watches": [{"id": "w", "source": "vinted"}]}, "query"),
+        ({"watches": [{"platform": "vinted", "query": {}}]}, "id"),
+        ({"watches": [{"id": "w", "platform": "ebay", "query": {}}]}, "unknown platform"),
+        ({"watches": [{"id": "w", "platform": "vinted"}]}, "query"),
         (minimal(notify_on=["teleport"]), "unknown notify_on"),
     ],
 )
@@ -63,7 +63,7 @@ def test_bad_config_explains_itself(raw, message):
 
 
 def test_duplicate_ids_are_rejected():
-    raw = {"watches": [{"id": "w", "source": "vinted", "query": {}}] * 2}
+    raw = {"watches": [{"id": "w", "platform": "vinted", "query": {}}] * 2}
 
     with pytest.raises(ConfigError, match="duplicate"):
         parse(raw)
@@ -108,3 +108,8 @@ def test_notify_on_must_be_a_list(bad):
 def test_a_falsy_non_mapping_defaults_is_still_rejected():
     with pytest.raises(ConfigError, match="defaults"):
         parse({"defaults": [], "watches": minimal()["watches"]})
+
+
+def test_the_old_source_key_gets_a_pointer_to_the_new_name():
+    with pytest.raises(ConfigError, match="now called 'platform'"):
+        parse({"watches": [{"id": "w", "source": "vinted", "query": {}}]})

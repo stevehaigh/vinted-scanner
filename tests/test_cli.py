@@ -16,7 +16,7 @@ def test_import_url_prints_a_pasteable_watch(capsys):
     parsed = json.loads(capsys.readouterr().out)
 
     assert exit_code == 0
-    assert parsed["source"] == "vinted"
+    assert parsed["platform"] == "vinted"
     assert parsed["id"] == "patagonia-fleece"
     assert parsed["query"]["search_text"] == "patagonia fleece"
     assert parsed["query"]["price_to"] == "60"
@@ -55,7 +55,7 @@ def test_rebuild_db_derives_a_queryable_database(tmp_path, capsys):
                 kind="appeared",
                 watch_id="w",
                 observation=Observation(
-                    source="vinted", entity_key="1", url="u", title="Fleece",
+                    platform="vinted", entity_key="1", url="u", title="Fleece",
                     attributes={"price": "29.88", "currency": "GBP"},
                 ),
             )

@@ -15,7 +15,7 @@ def event(kind="changed", **changes) -> Event:
         at=datetime(2026, 9, 9, tzinfo=UTC),
         kind=kind,
         watch_id="w",
-        observation=Observation(source="s", entity_key="1", url="u", title="t"),
+        observation=Observation(platform="s", entity_key="1", url="u", title="t"),
         changes=changes,
     )
 

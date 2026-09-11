@@ -15,9 +15,9 @@ import requests
 from . import config as config_module
 from . import db as db_module
 from .notify import ConsoleNotifier, EmailError, EmailNotifier, EmailSettings
+from .platforms.base import PlatformError
+from .platforms.vinted import DEFAULT_HOST, VintedPlatform, parse_search_url
 from .scan import run_scan
-from .sources.base import SourceError
-from .sources.vinted import DEFAULT_HOST, VintedSource, parse_search_url
 from .store import Store
 
 DEFAULT_DATA_DIR = Path("data")
@@ -148,14 +148,14 @@ def _list(path: Path) -> int:
     config = config_module.load(path)
     for watch in config.watches:
         mark = " " if watch.enabled else "-"
-        print(f"{mark} {watch.id:24} {watch.source:10} {', '.join(watch.notify_on)}")
+        print(f"{mark} {watch.id:24} {watch.platform:10} {', '.join(watch.notify_on)}")
     return 0
 
 
 def _brands(keyword: str, host: str) -> int:
     try:
-        found = VintedSource().brands(keyword, requests.Session(), host)
-    except (SourceError, requests.RequestException) as exc:
+        found = VintedPlatform().brands(keyword, requests.Session(), host)
+    except (PlatformError, requests.RequestException) as exc:
         print(f"brand lookup failed: {exc}", file=sys.stderr)
         return 1
     if not found:
@@ -175,7 +175,7 @@ def _import_url(url: str, watch_id: str | None) -> int:
         json.dumps(
             {
                 "id": derived,
-                "source": "vinted",
+                "platform": "vinted",
                 "enabled": True,
                 "notify_on": ["new_listing"],
                 "query": query,

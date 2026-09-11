@@ -18,7 +18,7 @@ from . import digest as digest_module
 from . import rules
 from .models import Config, Event, Observation, RunReport, Watch, WatchFailure
 from .notify import Notifier
-from .sources import SourceError, get_source
+from .platforms import PlatformError, get_platform
 from .store import Store, diff
 
 log = logging.getLogger("scanner")
@@ -45,14 +45,14 @@ def run_scan(
     for watch in config.enabled_watches:
         report.scanned += 1
         try:
-            source = get_source(watch.source)
+            platform = get_platform(watch.platform)
             session = session_factory()
-            observations = source.fetch(watch.query, session)
+            observations = platform.fetch(watch.query, session)
         except Exception as exc:
             # One dead site must never stop the others reporting - and a site
             # changing its response shape under us counts as dead. Anything
             # other than the expected failures gets a traceback in the log.
-            expected = isinstance(exc, SourceError | requests.RequestException)
+            expected = isinstance(exc, PlatformError | requests.RequestException)
             log.warning("watch %s failed: %s", watch.id, exc, exc_info=not expected)
             report.failures.append(WatchFailure(watch_id=watch.id, error=str(exc)))
             continue

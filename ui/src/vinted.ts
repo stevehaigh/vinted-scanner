@@ -4,7 +4,7 @@
  * The field table is imported from the Python package so the TypeScript and
  * Python parsers cannot drift apart.
  */
-import spec from "../../src/scanner/sources/vinted_params.json";
+import spec from "../../src/scanner/platforms/vinted_params.json";
 import type { Query } from "./types";
 
 interface Field {

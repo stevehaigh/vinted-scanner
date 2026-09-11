@@ -22,7 +22,7 @@ function invalidWatches(watches: Watch[]): string {
     if (!id) return "Every watch needs an ID.";
     if (seen.has(id)) return `Two watches share the ID "${id}".`;
     seen.add(id);
-    if (w.source === "shopify" && !String(w.query?.base_url ?? "").trim())
+    if (w.platform === "shopify" && !String(w.query?.base_url ?? "").trim())
       return `Watch "${id}" needs a store URL.`;
   }
   return "";
@@ -139,7 +139,7 @@ export default function App() {
 
       update([
         ...watches,
-        { id, label: "", source: "vinted", enabled: true, notify_on: ["new_listing"], query },
+        { id, label: "", platform: "vinted", enabled: true, notify_on: ["new_listing"], query },
       ]);
       setPastedUrl("");
       setTab("watches");
@@ -148,19 +148,19 @@ export default function App() {
     }
   };
 
-  const addBlank = (source: string) => {
+  const addBlank = (platform: string) => {
     const taken = new Set(watches.map((w) => w.id));
-    let id = `new-${source}`;
-    for (let n = 2; taken.has(id); n += 1) id = `new-${source}-${n}`;
+    let id = `new-${platform}`;
+    for (let n = 2; taken.has(id); n += 1) id = `new-${platform}-${n}`;
     update([
       ...watches,
       {
         id,
         label: "",
-        source,
+        platform,
         enabled: false,
-        notify_on: source === "vinted" ? ["new_listing"] : ["price_drop"],
-        query: source === "vinted" ? { host: "www.vinted.co.uk", order: "newest_first" } : {},
+        notify_on: platform === "vinted" ? ["new_listing"] : ["price_drop"],
+        query: platform === "vinted" ? { host: "www.vinted.co.uk", order: "newest_first" } : {},
       },
     ]);
   };

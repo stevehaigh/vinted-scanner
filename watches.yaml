@@ -13,7 +13,7 @@ defaults:
 watches:
   - id: patagonia-fleece
     label: Patagonia fleece under £60
-    source: vinted
+    platform: vinted
     enabled: true
     notify_on: [new_listing]
     query:
@@ -32,7 +32,7 @@ watches:
   # since most variants are sold-out sizes.
   - id: pwvc-sale
     label: Private White V.C. — price drops and restocks
-    source: shopify
+    platform: shopify
     enabled: true
     notify_on: [price_drop, back_in_stock]
     query:

@@ -1,6 +1,6 @@
 """Core domain types.
 
-The whole system is built on one idea: a source reports what it can *currently*
+The whole system is built on one idea: a platform reports what it can *currently*
 see, and the difference between that and what we have seen before is an event.
 """
 
@@ -16,7 +16,7 @@ EventKind = Literal["appeared", "changed"]
 
 @dataclass(frozen=True, slots=True)
 class Observation:
-    """A single sighting of an entity by a source.
+    """A single sighting of an entity by a platform.
 
     ``attributes`` are *material*: they are diffed between runs, and a difference
     produces a ``changed`` event. ``extra`` is recorded but never diffed, which is
@@ -25,7 +25,7 @@ class Observation:
     permanent stream of meaningless change events.
     """
 
-    source: str
+    platform: str
     entity_key: str
     url: str
     title: str
@@ -34,7 +34,7 @@ class Observation:
 
     @property
     def identity(self) -> tuple[str, str]:
-        return (self.source, self.entity_key)
+        return (self.platform, self.entity_key)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +56,7 @@ class Event:
             "at": self.at.isoformat().replace("+00:00", "Z"),
             "kind": self.kind,
             "watch_id": self.watch_id,
-            "source": self.observation.source,
+            "platform": self.observation.platform,
             "entity_key": self.observation.entity_key,
             "url": self.observation.url,
             "title": self.observation.title,
@@ -75,7 +75,8 @@ class Event:
             kind=raw["kind"],
             watch_id=raw["watch_id"],
             observation=Observation(
-                source=raw["source"],
+                # Lines written before 2026-09-10 called this "source".
+                platform=raw.get("platform", raw.get("source")),
                 entity_key=raw["entity_key"],
                 url=raw["url"],
                 title=raw["title"],
@@ -89,10 +90,10 @@ class Event:
 
 @dataclass(frozen=True, slots=True)
 class Watch:
-    """One thing being watched, on one source."""
+    """One thing being watched, on one platform."""
 
     id: str
-    source: str
+    platform: str
     query: dict[str, Any]
     notify_on: tuple[str, ...] = ("new_listing",)
     enabled: bool = True

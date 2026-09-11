@@ -120,7 +120,7 @@ def diff(
     at: datetime,
     watch_id: str,
 ) -> list[Event]:
-    """Turn what a source can see now into events, given what we already knew.
+    """Turn what a platform can see now into events, given what we already knew.
 
     ``known`` is mutated as we go, so that two watches reporting the same entity
     in one run do not both claim it appeared.
