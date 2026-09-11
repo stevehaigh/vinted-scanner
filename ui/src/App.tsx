@@ -7,6 +7,11 @@ import { parseSearchUrl, suggestId } from "./vinted";
 import type { ScanEvent, Watch, WatchFile } from "./types";
 
 const WATCHES_PATH = "watches.yaml";
+const EDIT_ON_GITHUB = `https://github.com/${gh.REPO}/edit/main/${WATCHES_PATH}`;
+const NEW_TOKEN =
+  "https://github.com/settings/personal-access-tokens/new" +
+  `?name=vinted-scanner+UI&description=Lets+the+scanner+page+save+watches.yaml` +
+  `&contents=write&target_name=${gh.REPO.split("/")[0]}`;
 
 /** The scanner accepts `notify_on: price_drop` as shorthand for a one-item list. */
 function asList(value: string | string[]): string[] {
@@ -201,9 +206,16 @@ export default function App() {
             onBlur={(e) => saveToken(e.target.value)}
           />
           <p className="muted" style={{ marginBottom: 0 }}>
-            A fine-grained token with <strong>Contents: read and write</strong> on this repository
-            only. Stored in this browser, sent only to api.github.com. Needed to save; reading a
-            public repo works without one.
+            Only needed to save from this page.{" "}
+            <a href={NEW_TOKEN} target="_blank" rel="noreferrer">
+              Create one
+            </a>{" "}
+            with <strong>Contents: read and write</strong> on this repository only, paste it here,
+            and it stays in this browser. Or skip the token and{" "}
+            <a href={EDIT_ON_GITHUB} target="_blank" rel="noreferrer">
+              edit watches.yaml on GitHub
+            </a>{" "}
+            instead.
           </p>
         </div>
       )}
@@ -251,7 +263,17 @@ export default function App() {
             <button className="btn subtle" onClick={() => void load()} disabled={busy}>
               Reload
             </button>
-            {dirty && <span className="muted">Unsaved changes</span>}
+            {dirty && !token ? (
+              <span className="muted">
+                Unsaved changes. Add a GitHub token above to save, or{" "}
+                <a href={EDIT_ON_GITHUB} target="_blank" rel="noreferrer">
+                  edit watches.yaml on GitHub
+                </a>
+                .
+              </span>
+            ) : (
+              dirty && <span className="muted">Unsaved changes</span>
+            )}
             {token && (
               <button className="btn subtle" onClick={() => saveToken("")}>
                 Forget token
