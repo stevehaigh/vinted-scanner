@@ -76,6 +76,27 @@ uv run python -m scanner import-url \
 That prints a block to paste into `watches.yaml`. Editing the file by hand is
 equally fine; the UI and your text editor write the same thing.
 
+Free-text search matches titles, so "patagonia fleece" also returns fleeces that
+merely mention Patagonia. To pin a watch to a brand, set `brand_ids` in its
+query. Vinted filters by id, not name, and the ids are not guessable, so look
+them up:
+
+```bash
+uv run python -m scanner brands patagonia
+#     90804  Patagonia
+```
+
+Then in the watch:
+
+```yaml
+query:
+  search_text: fleece
+  brand_ids: [90804]
+```
+
+Every list field in the Vinted query (`brand_ids`, `size_ids`, `catalog_ids`,
+and so on) works the same way, and a pasted search URL fills them in for you.
+
 Each watch chooses what it wants to hear about:
 
 | `notify_on` | Fires when |

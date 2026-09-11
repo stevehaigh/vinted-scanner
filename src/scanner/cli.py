@@ -10,11 +10,14 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import requests
+
 from . import config as config_module
 from . import db as db_module
 from .notify import ConsoleNotifier, EmailError, EmailNotifier, EmailSettings
 from .scan import run_scan
-from .sources.vinted import parse_search_url
+from .sources.base import SourceError
+from .sources.vinted import DEFAULT_HOST, VintedSource, parse_search_url
 from .store import Store
 
 DEFAULT_DATA_DIR = Path("data")
@@ -41,6 +44,10 @@ def main(argv: list[str] | None = None) -> int:
     imp.add_argument("url")
     imp.add_argument("--id", default=None, help="watch id (default: derived from search text)")
 
+    brands = sub.add_parser("brands", help="look up Vinted brand ids to use in brand_ids")
+    brands.add_argument("keyword")
+    brands.add_argument("--host", default=DEFAULT_HOST)
+
     args = parser.parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -61,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "import-url":
         return _import_url(args.url, args.id)
+    if args.command == "brands":
+        return _brands(args.keyword, args.host)
     if args.command == "list":
         return _list(args.config)
     if args.command == "rebuild-db":
@@ -140,6 +149,20 @@ def _list(path: Path) -> int:
     for watch in config.watches:
         mark = " " if watch.enabled else "-"
         print(f"{mark} {watch.id:24} {watch.source:10} {', '.join(watch.notify_on)}")
+    return 0
+
+
+def _brands(keyword: str, host: str) -> int:
+    try:
+        found = VintedSource().brands(keyword, requests.Session(), host)
+    except (SourceError, requests.RequestException) as exc:
+        print(f"brand lookup failed: {exc}", file=sys.stderr)
+        return 1
+    if not found:
+        print(f"no brands match {keyword!r}", file=sys.stderr)
+        return 1
+    for brand_id, title in found:
+        print(f"{brand_id:>10}  {title}")
     return 0
 
 

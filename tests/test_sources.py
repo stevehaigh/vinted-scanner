@@ -278,3 +278,35 @@ class TestShopifyCurrency:
         observations = ShopifySource().fetch({"base_url": "https://example.com"}, shopify_session)
 
         assert observations[0].attributes["currency"] == "GBP"
+
+
+class TestVintedBrandLookup:
+    def test_returns_id_and_title_pairs(self):
+        session = FakeSession(
+            {
+                "/api/v2/brands": {
+                    "brands": [
+                        {"id": 90804, "title": "Patagonia", "item_count": 12345},
+                        {"id": 7, "title": "Patagonia x Something"},
+                    ]
+                }
+            }
+        )
+
+        found = VintedSource().brands("patagonia", session)
+
+        assert found == [(90804, "Patagonia"), (7, "Patagonia x Something")]
+        assert session.calls[-1][1] == {"keyword": "patagonia"}
+
+    def test_the_lookup_primes_cookies_like_a_search(self, vinted_session):
+        vinted_session.routes["/api/v2/brands"] = {"brands": []}
+
+        VintedSource().brands("x", vinted_session)
+
+        assert vinted_session.calls[0][0] == "https://www.vinted.co.uk/"
+
+    def test_a_missing_brand_list_is_a_source_error(self):
+        session = FakeSession({"/api/v2/brands": {"nope": 1}})
+
+        with pytest.raises(SourceError, match="unexpected JSON"):
+            VintedSource().brands("x", session)
