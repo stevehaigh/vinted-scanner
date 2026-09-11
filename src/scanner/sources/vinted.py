@@ -103,7 +103,7 @@ class VintedSource:
             items = response.json()["items"]
         except (ValueError, KeyError, TypeError) as exc:
             raise SourceError(f"vinted {host} returned unexpected JSON: {exc}") from exc
-        if not isinstance(items, list):
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
             raise SourceError(f"vinted {host} returned no item list")
 
         return [self._to_observation(item, host) for item in items]

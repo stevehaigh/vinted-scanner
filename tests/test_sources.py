@@ -62,6 +62,14 @@ class TestVinted:
             VintedSource().fetch({}, session)
 
 
+class TestVintedPayloadShape:
+    def test_a_null_item_is_a_source_error(self):
+        session = FakeSession({"catalog/items": {"items": [None]}})
+
+        with pytest.raises(SourceError, match="item list"):
+            VintedSource().fetch({"search_text": "x"}, session)
+
+
 class TestVintedHosts:
     def test_an_unknown_host_is_refused_before_any_request(self):
         session = FakeSession({})
@@ -240,11 +248,18 @@ class TestShopifyPagination:
         assert len(calls) == 1
         assert len(observations) == 30
 
-    def test_a_non_numeric_cap_is_a_source_error(self, shopify_session):
+    @pytest.mark.parametrize("cap", [0, -1, "all"])
+    def test_a_cap_below_one_is_a_source_error(self, shopify_session, cap):
         with pytest.raises(SourceError, match="max_products"):
             ShopifySource().fetch(
-                {"base_url": "https://example.com", "max_products": "all"}, shopify_session
+                {"base_url": "https://example.com", "max_products": cap}, shopify_session
             )
+
+    def test_a_null_product_is_a_source_error(self):
+        session = FakeSession({"products.json": {"products": [None]}})
+
+        with pytest.raises(SourceError, match="product list"):
+            ShopifySource().fetch({"base_url": "https://example.com"}, session)
 
     def test_a_feed_that_is_not_an_object_is_a_source_error(self):
         session = FakeSession({"products.json": []})

@@ -17,11 +17,12 @@ function asList(value: string | string[]): string[] {
 function invalidWatches(watches: Watch[]): string {
   const seen = new Set<string>();
   for (const w of watches) {
-    const id = w.id.trim();
+    // Hand-edited YAML can carry a numeric id or no query at all.
+    const id = String(w.id ?? "").trim();
     if (!id) return "Every watch needs an ID.";
     if (seen.has(id)) return `Two watches share the ID "${id}".`;
     seen.add(id);
-    if (w.source === "shopify" && !String(w.query.base_url ?? "").trim())
+    if (w.source === "shopify" && !String(w.query?.base_url ?? "").trim())
       return `Watch "${id}" needs a store URL.`;
   }
   return "";

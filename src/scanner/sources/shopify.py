@@ -42,9 +42,12 @@ class ShopifySource:
         try:
             limit = int(query.get("max_products", PAGE_SIZE))
         except (TypeError, ValueError):
+            limit = 0
+        if limit < 1:
             raise SourceError(
-                f"shopify max_products must be a whole number, not {query.get('max_products')!r}"
-            ) from None
+                f"shopify max_products must be a positive whole number, "
+                f"not {query.get('max_products')!r}"
+            )
         path = f"/collections/{collection}/products.json" if collection else "/products.json"
 
         # Assigned, not setdefault: a fresh Session already has a
@@ -74,7 +77,7 @@ class ShopifySource:
             except ValueError as exc:
                 raise SourceError(f"shopify {base} returned unexpected JSON: {exc}") from exc
             products = payload.get("products") if isinstance(payload, dict) else None
-            if not isinstance(products, list):
+            if not isinstance(products, list) or not all(isinstance(p, dict) for p in products):
                 raise SourceError(f"shopify {base} returned no product list")
 
             for product in products[: limit - fetched]:
