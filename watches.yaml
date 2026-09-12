@@ -53,3 +53,25 @@ watches:
         - '6'
       order: newest_first
       per_page: 40
+  - id: lululemon-men-t-shirts
+    label: ''
+    platform: vinted
+    enabled: true
+    notify_on:
+      - new_listing
+    query:
+      host: www.vinted.co.uk
+      search_text: lululemon men t-shirts
+      brand_ids:
+        - '198238'
+      size_ids:
+        - '1427'
+        - '209'
+        - '1534'
+        - '787'
+        - '1524'
+      status_ids:
+        - '1'
+        - '6'
+      order: newest_first
+      per_page: 40
