@@ -13,3 +13,43 @@ watches:
       collection: all
       currency: GBP
       max_products: 250
+  - id: private-white-v-c-men-ventile
+    label: ''
+    platform: vinted
+    enabled: true
+    notify_on:
+      - new_listing
+    query:
+      host: www.vinted.co.uk
+      search_text: private white v.c men ventile
+      catalog_ids:
+        - '2052'
+      brand_ids:
+        - '571013'
+      order: newest_first
+      per_page: 40
+      status_ids:
+        - '1'
+        - '6'
+      size_ids:
+        - '209'
+        - '1534'
+  - id: derek-rose-t-shirt-men
+    label: ''
+    platform: vinted
+    enabled: true
+    notify_on:
+      - new_listing
+    query:
+      host: www.vinted.co.uk
+      search_text: derek rose t-shirt men
+      brand_ids:
+        - '917025'
+      size_ids:
+        - '209'
+        - '1534'
+      status_ids:
+        - '1'
+        - '6'
+      order: newest_first
+      per_page: 40
