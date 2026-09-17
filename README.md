@@ -67,14 +67,22 @@ hours, whatever the cron says. A `workflow_dispatch` is not throttled, so a Mac
 that is usually on can do the timing while GitHub still does the work:
 
 ```bash
-gh auth login                          # once, on the Mac
-scripts/install-dispatcher.sh          # every 5 minutes; pass seconds to change
-scripts/install-dispatcher.sh --uninstall
+gh auth login                            # once, on the Mac
+scripts/install-dispatcher.sh            # every 5 minutes; pass seconds to change
+
+scripts/uninstall-dispatcher.sh          # stop and remove it
+scripts/uninstall-dispatcher.sh --status # check whether it is running
 ```
 
 That installs a launchd agent that runs `gh workflow run scan.yml` on an
 interval. Nothing else changes: the log, the secrets and the email all stay on
 GitHub, and the cron remains as a backstop for when the Mac is off.
+
+`uninstall-dispatcher.sh` hardcodes the agent label rather than reading it from
+the repo, so it works on a machine with no checkout. It is safe to run twice,
+and it exits non-zero if the agent somehow survives, rather than claiming
+success. The installer's own `--uninstall` flag still works and does the same
+job, without the verification.
 
 ## Adding a watch
 
