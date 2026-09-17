@@ -20,10 +20,21 @@ def load_fixture(name: str) -> dict[str, Any]:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
+def load_fixture_text(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
 class FakeResponse:
     def __init__(self, payload: Any, status_code: int = 200) -> None:
         self._payload = payload
         self.status_code = status_code
+        if isinstance(payload, str):
+            self.text = payload
+        else:
+            try:
+                self.text = json.dumps(payload)
+            except TypeError:
+                self.text = str(payload)
 
     def json(self) -> Any:
         if isinstance(self._payload, Exception):
