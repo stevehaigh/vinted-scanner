@@ -126,7 +126,6 @@ class VintedPlatform:
                 raise PlatformError(f"vinted {candidate_host} returned HTTP {response.status_code}")
 
         for candidate_host in candidate_hosts:
-            self._prime(session, candidate_host)
             response = session.get(
                 f"https://{candidate_host}{CATALOG_PATH}",
                 params=build_catalog_params(query),
