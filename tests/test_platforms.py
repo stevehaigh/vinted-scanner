@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import FakeResponse, FakeSession, load_fixture_text
+from conftest import FakeResponse, FakeSession, load_fixture, load_fixture_text
 from scanner.platforms import get_platform, platform_names
 from scanner.platforms.base import PlatformError
 from scanner.platforms.shopify import ShopifyPlatform
@@ -80,6 +80,23 @@ class TestVinted:
         assert observations[0].attributes["brand"] == "Private White V.C."
         assert any("/catalog" in url for url, _ in session.calls)
 
+    def test_404_on_www_retries_the_non_www_api_host(self):
+        session = FakeSession(
+            {
+                "https://www.vinted.co.uk/api/v2/catalog/items": FakeResponse({}, status_code=404),
+                "https://vinted.co.uk/api/v2/catalog/items": load_fixture("vinted_catalog"),
+            }
+        )
+
+        observations = VintedPlatform().fetch(
+            {"host": "www.vinted.co.uk", "search_text": "x"},
+            session,
+        )
+
+        assert observations
+        assert any("https://vinted.co.uk/api/v2/catalog/items" in url for url, _ in session.calls)
+        assert not any(url.endswith("/catalog") for url, _ in session.calls)
+
     def test_404_api_with_unparseable_catalog_is_a_platform_error(self):
         session = FakeSession(
             {
@@ -90,6 +107,24 @@ class TestVinted:
 
         with pytest.raises(PlatformError, match="catalog page returned no listings"):
             VintedPlatform().fetch({"host": "www.vinted.co.uk", "search_text": "x"}, session)
+
+    def test_catalog_fallback_accepts_image_objects(self):
+        session = FakeSession(
+            {
+                "/api/v2/catalog/items": FakeResponse({}, status_code=404),
+                "/catalog": FakeResponse(
+                    """
+                    <script type="application/ld+json">
+                    {"@type":"ItemList","itemListElement":[{"item":{"name":"x","url":"/items/1-x","image":{"url":"https://images/1.jpg"},"offers":{"price":"10.00","priceCurrency":"GBP"}}}]}
+                    </script>
+                    """
+                ),
+            }
+        )
+
+        (observation,) = VintedPlatform().fetch({"host": "www.vinted.co.uk"}, session)
+
+        assert observation.extra["image"] == "https://images/1.jpg"
 
 
 class TestVintedPayloadShape:

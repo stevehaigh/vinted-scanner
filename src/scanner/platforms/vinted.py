@@ -109,8 +109,9 @@ class VintedPlatform:
             raise PlatformError(
                 f"{host!r} is not a known Vinted site; add it to vinted_params.json if it should be"
             )
-        api_error: PlatformError | None = None
-        for candidate_host in self._candidate_hosts(host):
+        candidate_hosts = self._candidate_hosts(host)
+        api_404_hosts: list[str] = []
+        for candidate_host in candidate_hosts:
             self._prime(session, candidate_host)
             response = session.get(
                 f"https://{candidate_host}{API_PATH}",
@@ -124,9 +125,12 @@ class VintedPlatform:
                 ]
             if response.status_code != 404:
                 raise PlatformError(f"vinted {candidate_host} returned HTTP {response.status_code}")
-            api_error = PlatformError(f"vinted {candidate_host} returned HTTP 404")
+            api_404_hosts.append(candidate_host)
 
-        for candidate_host in self._candidate_hosts(host):
+        if len(api_404_hosts) != len(candidate_hosts):
+            raise PlatformError(f"vinted {host} API failed")
+
+        for candidate_host in candidate_hosts:
             self._prime(session, candidate_host)
             response = session.get(
                 f"https://{candidate_host}{CATALOG_PATH}",
@@ -141,7 +145,7 @@ class VintedPlatform:
             if response.status_code != 404:
                 raise PlatformError(f"vinted {candidate_host} returned HTTP {response.status_code}")
 
-        raise api_error or PlatformError(f"vinted {host} returned HTTP 404")
+        raise PlatformError(f"vinted {host} returned HTTP 404")
 
     def brands(
         self, keyword: str, session: requests.Session, host: str = DEFAULT_HOST
@@ -186,7 +190,7 @@ class VintedPlatform:
         hosts = [host]
         if host.startswith("www."):
             hosts.append(host[4:])
-        elif "." in host:
+        elif f"www.{host}" in params_spec()["hosts"]:
             hosts.append(f"www.{host}")
         return list(dict.fromkeys(hosts))
 
@@ -267,6 +271,8 @@ class VintedPlatform:
         image = raw_item.get("image")
         if isinstance(image, list):
             image = image[0] if image else None
+        if isinstance(image, dict):
+            image = image.get("url") or image.get("contentUrl")
         photo = {"url": image} if isinstance(image, str) else {}
 
         return {
