@@ -16,8 +16,16 @@
   ],
   "defaults": { "order": "newest_first", "per_page": 40 },
   "hosts": [
-    "www.vinted.co.uk", "www.vinted.fr", "www.vinted.de", "www.vinted.nl",
-    "www.vinted.es", "www.vinted.it", "www.vinted.pl", "www.vinted.be",
-    "www.vinted.at", "www.vinted.cz", "www.vinted.com"
+    "www.vinted.co.uk", "vinted.co.uk",
+    "www.vinted.fr", "vinted.fr",
+    "www.vinted.de", "vinted.de",
+    "www.vinted.nl", "vinted.nl",
+    "www.vinted.es", "vinted.es",
+    "www.vinted.it", "vinted.it",
+    "www.vinted.pl", "vinted.pl",
+    "www.vinted.be", "vinted.be",
+    "www.vinted.at", "vinted.at",
+    "www.vinted.cz", "vinted.cz",
+    "www.vinted.com", "vinted.com"
   ]
 }

@@ -8,8 +8,8 @@ embedded structured data when needed.
 from __future__ import annotations
 
 import json
-import re
 from functools import lru_cache
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlparse
@@ -25,12 +25,39 @@ API_PATH = "/api/v2/catalog/items"
 BRANDS_PATH = "/api/v2/brands"
 CATALOG_PATH = "/catalog"
 TIMEOUT = 30
-ITEM_ID_RE = re.compile(r"/items/(\d+)")
 
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
+
+
+class _LdJsonScriptParser(HTMLParser):
+    """Collect the contents of ``<script type=application/ld+json>`` nodes."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._inside = False
+        self._chunks: list[str] = []
+        self.contents: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "script":
+            return
+        attr_map = {name.lower(): (value or "") for name, value in attrs}
+        if attr_map.get("type", "").strip().lower() == "application/ld+json":
+            self._inside = True
+            self._chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if self._inside:
+            self._chunks.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._inside and tag.lower() == "script":
+            self.contents.append("".join(self._chunks).strip())
+            self._inside = False
+            self._chunks = []
 
 
 @lru_cache(maxsize=1)
@@ -181,10 +208,11 @@ class VintedPlatform:
             raise PlatformError(f"could not reach {host}: {exc}") from exc
 
     def _candidate_hosts(self, host: str) -> list[str]:
+        known_hosts = set(params_spec()["hosts"])
         hosts = [host]
-        if host.startswith("www."):
+        if host.startswith("www.") and host[4:] in known_hosts:
             hosts.append(host[4:])
-        elif f"www.{host}" in params_spec()["hosts"]:
+        elif f"www.{host}" in known_hosts:
             hosts.append(f"www.{host}")
         return list(dict.fromkeys(hosts))
 
@@ -198,12 +226,10 @@ class VintedPlatform:
         return items
 
     def _items_from_catalog_page(self, page: str, host: str) -> list[dict[str, Any]]:
-        scripts = re.findall(
-            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-            page,
-            flags=re.IGNORECASE | re.DOTALL,
-        )
-        for script in scripts:
+        parser = _LdJsonScriptParser()
+        parser.feed(page)
+        parser.close()
+        for script in parser.contents:
             try:
                 payload = json.loads(script.strip())
             except ValueError:
@@ -246,8 +272,11 @@ class VintedPlatform:
         if not isinstance(url, str):
             return None
         url = url if "://" in url else f"https://{host}{url}"
-        item_id = ITEM_ID_RE.search(urlparse(url).path or "")
-        if item_id is None:
+        item_path = urlparse(url).path or ""
+        item_id = ""
+        if "/items/" in item_path:
+            item_id = item_path.split("/items/", 1)[-1].split("-", 1)[0]
+        if not item_id.isdigit():
             return None
 
         offers = raw_item.get("offers")
@@ -270,7 +299,7 @@ class VintedPlatform:
         photo = {"url": image} if isinstance(image, str) else {}
 
         return {
-            "id": item_id.group(1),
+            "id": item_id,
             "title": raw_item.get("name") or raw_item.get("title") or "",
             "url": url,
             "price": {
