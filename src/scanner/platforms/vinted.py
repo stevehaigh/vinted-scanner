@@ -292,6 +292,14 @@ class VintedPlatform:
         total_item_price = item.get("total_item_price") or {}
         if not isinstance(total_item_price, dict):
             total_item_price = {"amount": _money(total_item_price)}
+        total_price = _money(total_item_price)
+        extra: dict[str, Any] = {
+            "image": photo.get("url"),
+            "favourites": item.get("favourite_count"),
+            "host": host,
+        }
+        if total_price is not None:
+            extra["total_price"] = total_price
         return Observation(
             platform=self.name,
             entity_key=str(item["id"]),
@@ -310,10 +318,5 @@ class VintedPlatform:
             # Informational: recorded, never diffed. Photo URLs carry a rotating
             # signature and favourite counts move constantly; diffing either
             # would manufacture change events forever.
-            extra={
-                "image": photo.get("url"),
-                "total_price": _money(total_item_price),
-                "favourites": item.get("favourite_count"),
-                "host": host,
-            },
+            extra=extra,
         )
