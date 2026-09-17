@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import FakeResponse, FakeSession
+from conftest import FakeResponse, FakeSession, load_fixture_text
 from scanner.platforms import get_platform, platform_names
 from scanner.platforms.base import PlatformError
 from scanner.platforms.shopify import ShopifyPlatform
@@ -60,6 +60,36 @@ class TestVinted:
 
         with pytest.raises(PlatformError, match="unexpected JSON"):
             VintedPlatform().fetch({}, session)
+
+    def test_404_api_falls_back_to_catalog_page(self):
+        session = FakeSession(
+            {
+                "/api/v2/catalog/items": FakeResponse({}, status_code=404),
+                "/catalog": FakeResponse(load_fixture_text("vinted_catalog_page.html")),
+            }
+        )
+
+        observations = VintedPlatform().fetch(
+            {"host": "www.vinted.co.uk", "search_text": "ventile"},
+            session,
+        )
+
+        assert [o.entity_key for o in observations] == ["1234567890", "2234567890"]
+        assert observations[0].attributes["price"] == "399.00"
+        assert observations[0].attributes["currency"] == "GBP"
+        assert observations[0].attributes["brand"] == "Private White V.C."
+        assert any("/catalog" in url for url, _ in session.calls)
+
+    def test_404_api_with_unparseable_catalog_is_a_platform_error(self):
+        session = FakeSession(
+            {
+                "/api/v2/catalog/items": FakeResponse({}, status_code=404),
+                "/catalog": FakeResponse("<html><body>no listings json</body></html>"),
+            }
+        )
+
+        with pytest.raises(PlatformError, match="catalog page returned no listings"):
+            VintedPlatform().fetch({"host": "www.vinted.co.uk", "search_text": "x"}, session)
 
 
 class TestVintedPayloadShape:

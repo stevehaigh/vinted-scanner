@@ -68,10 +68,11 @@ real-world latency is nearer 15–25 minutes under runner contention. This is a
 "what appeared lately" digest, not a sniping tool. The repository is public, so
 Actions minutes are free and the watch list is public — both accepted.
 
-A spike confirmed Vinted's undocumented JSON API answers from a datacenter IP
-with no proxy: fetch the locale homepage to pick up `access_token_web` and
-`anon_id` cookies, then call `/api/v2/catalog/items`. No proxy pool is needed,
-unlike the reference implementation.
+A spike confirmed Vinted's old undocumented JSON API *used* to answer from a
+datacenter IP with no proxy, but it now intermittently returns 404. The adapter
+still tries `/api/v2/catalog/items` first, then falls back to parsing listings
+from the public `/catalog` page's embedded structured data. No proxy pool is
+needed, unlike the reference implementation.
 
 The workflow re-enables itself on every run, defeating GitHub's 60-day
 inactivity disable. A `concurrency` group prevents two runs racing to commit.
@@ -142,8 +143,9 @@ session all injected.
 
 ### Platforms
 
-**Vinted** seeds cookies from the locale homepage, then calls
-`/api/v2/catalog/items`. `entity_key` is the item id. Material attributes:
+**Vinted** seeds cookies from the locale homepage, then tries
+`/api/v2/catalog/items`; if that returns 404 it falls back to parsing embedded
+listing data on `/catalog`. `entity_key` is the item id. Material attributes:
 title, price, currency, brand, size, condition, seller. Extras: image URL,
 favourite count, total price including buyer protection.
 

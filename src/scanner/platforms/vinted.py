@@ -1,14 +1,14 @@
-"""Vinted, via its undocumented catalog API.
+"""Vinted catalog listings.
 
-Vinted looks like a scraping target but isn't. Hitting the locale homepage sets
-``access_token_web`` and ``anon_id`` cookies, after which ``/api/v2/catalog/items``
-answers with clean JSON. A spike confirmed this works from a datacenter IP with
-no proxy, so unlike the reference implementation there is no proxy pool here.
+Vinted's old undocumented API endpoint now often returns 404. We still try it
+first, but fall back to extracting listings from the public catalog page's
+embedded structured data when needed.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,9 @@ PARAMS_PATH = Path(__file__).with_name("vinted_params.json")
 DEFAULT_HOST = "www.vinted.co.uk"
 API_PATH = "/api/v2/catalog/items"
 BRANDS_PATH = "/api/v2/brands"
+CATALOG_PATH = "/catalog"
 TIMEOUT = 30
+ITEM_ID_RE = re.compile(r"/items/(\d+)")
 
 BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -74,10 +76,27 @@ def build_api_params(query: dict[str, Any]) -> dict[str, Any]:
     return params
 
 
+def build_catalog_params(query: dict[str, Any]) -> list[tuple[str, str]]:
+    """Structured query -> public catalog querystring."""
+    params: list[tuple[str, str]] = []
+    for field in params_spec()["fields"]:
+        value = query.get(field["name"])
+        if value in (None, "", []):
+            continue
+        if field["list"]:
+            values = value if isinstance(value, list) else [value]
+            params.extend((field["url_param"], str(v)) for v in values)
+        else:
+            params.append((field["url_param"], str(value)))
+    return params
+
+
 def _money(value: Any) -> str | None:
     """Vinted money objects are ``{"amount": "29.88", "currency_code": "GBP"}``."""
     if isinstance(value, dict):
         return value.get("amount")
+    if isinstance(value, (int, float, str)):
+        return str(value)
     return None
 
 
@@ -90,24 +109,39 @@ class VintedPlatform:
             raise PlatformError(
                 f"{host!r} is not a known Vinted site; add it to vinted_params.json if it should be"
             )
-        self._prime(session, host)
+        api_error: PlatformError | None = None
+        for candidate_host in self._candidate_hosts(host):
+            self._prime(session, candidate_host)
+            response = session.get(
+                f"https://{candidate_host}{API_PATH}",
+                params=build_api_params(query),
+                timeout=TIMEOUT,
+            )
+            if response.status_code == 200:
+                return [
+                    self._to_observation(item, candidate_host)
+                    for item in self._items(response, candidate_host)
+                ]
+            if response.status_code != 404:
+                raise PlatformError(f"vinted {candidate_host} returned HTTP {response.status_code}")
+            api_error = PlatformError(f"vinted {candidate_host} returned HTTP 404")
 
-        response = session.get(
-            f"https://{host}{API_PATH}",
-            params=build_api_params(query),
-            timeout=TIMEOUT,
-        )
-        if response.status_code != 200:
-            raise PlatformError(f"vinted {host} returned HTTP {response.status_code}")
+        for candidate_host in self._candidate_hosts(host):
+            self._prime(session, candidate_host)
+            response = session.get(
+                f"https://{candidate_host}{CATALOG_PATH}",
+                params=build_catalog_params(query),
+                timeout=TIMEOUT,
+            )
+            if response.status_code == 200:
+                items = self._items_from_catalog_page(response.text, candidate_host)
+                if items:
+                    return [self._to_observation(item, candidate_host) for item in items]
+                raise PlatformError(f"vinted {candidate_host} catalog page returned no listings")
+            if response.status_code != 404:
+                raise PlatformError(f"vinted {candidate_host} returned HTTP {response.status_code}")
 
-        try:
-            items = response.json()["items"]
-        except (ValueError, KeyError, TypeError) as exc:
-            raise PlatformError(f"vinted {host} returned unexpected JSON: {exc}") from exc
-        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
-            raise PlatformError(f"vinted {host} returned no item list")
-
-        return [self._to_observation(item, host) for item in items]
+        raise api_error or PlatformError(f"vinted {host} returned HTTP 404")
 
     def brands(
         self, keyword: str, session: requests.Session, host: str = DEFAULT_HOST
@@ -134,7 +168,7 @@ class VintedPlatform:
         return [(int(b["id"]), str(b["title"])) for b in found if isinstance(b, dict)]
 
     def _prime(self, session: requests.Session, host: str) -> None:
-        """Visit the homepage so the API will talk to us.
+        """Visit the homepage so Vinted sees browser-like session headers.
 
         Headers are *assigned*, never ``setdefault``-ed: a fresh
         ``requests.Session`` already carries ``User-Agent: python-requests/x.y``,
@@ -148,9 +182,116 @@ class VintedPlatform:
         except requests.RequestException as exc:
             raise PlatformError(f"could not reach {host}: {exc}") from exc
 
+    def _candidate_hosts(self, host: str) -> list[str]:
+        hosts = [host]
+        if host.startswith("www."):
+            hosts.append(host[4:])
+        elif "." in host:
+            hosts.append(f"www.{host}")
+        return list(dict.fromkeys(hosts))
+
+    def _items(self, response: requests.Response, host: str) -> list[dict[str, Any]]:
+        try:
+            items = response.json()["items"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise PlatformError(f"vinted {host} returned unexpected JSON: {exc}") from exc
+        if not isinstance(items, list) or not all(isinstance(item, dict) for item in items):
+            raise PlatformError(f"vinted {host} returned no item list")
+        return items
+
+    def _items_from_catalog_page(self, page: str, host: str) -> list[dict[str, Any]]:
+        scripts = re.findall(
+            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            page,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        for script in scripts:
+            try:
+                payload = json.loads(script.strip())
+            except ValueError:
+                continue
+            items = self._items_from_ld_json(payload, host)
+            if items:
+                return items
+        return []
+
+    def _items_from_ld_json(self, payload: Any, host: str) -> list[dict[str, Any]]:
+        if isinstance(payload, list):
+            found: list[dict[str, Any]] = []
+            for value in payload:
+                found.extend(self._items_from_ld_json(value, host))
+            return found
+        if not isinstance(payload, dict):
+            return []
+
+        entries = payload.get("itemListElement")
+        if payload.get("@type") == "ItemList" and isinstance(entries, list):
+            found = [
+                item
+                for entry in entries
+                if (item := self._item_from_ld_json_entry(entry, host))
+            ]
+            if found:
+                return found
+
+        for value in payload.values():
+            found = self._items_from_ld_json(value, host)
+            if found:
+                return found
+        return []
+
+    def _item_from_ld_json_entry(self, entry: Any, host: str) -> dict[str, Any] | None:
+        if not isinstance(entry, dict):
+            return None
+        raw_item = entry.get("item") if isinstance(entry.get("item"), dict) else entry
+        url = raw_item.get("url")
+        if not isinstance(url, str):
+            return None
+        url = url if "://" in url else f"https://{host}{url}"
+        item_id = ITEM_ID_RE.search(urlparse(url).path or "")
+        if item_id is None:
+            return None
+
+        offers = raw_item.get("offers")
+        if isinstance(offers, list):
+            offers = offers[0] if offers else {}
+        if not isinstance(offers, dict):
+            offers = {}
+
+        brand = raw_item.get("brand")
+        if isinstance(brand, dict):
+            brand = brand.get("name")
+        if not isinstance(brand, str):
+            brand = None
+
+        image = raw_item.get("image")
+        if isinstance(image, list):
+            image = image[0] if image else None
+        photo = {"url": image} if isinstance(image, str) else {}
+
+        return {
+            "id": item_id.group(1),
+            "title": raw_item.get("name") or raw_item.get("title") or "",
+            "url": url,
+            "price": {
+                "amount": _money(offers.get("price")),
+                "currency_code": offers.get("priceCurrency"),
+            },
+            "brand_title": brand,
+            "photo": photo,
+            "user": {},
+            "is_visible": True,
+        }
+
     def _to_observation(self, item: dict[str, Any], host: str) -> Observation:
         photo = item.get("photo") or {}
         user = item.get("user") or {}
+        price = item.get("price") or {}
+        if not isinstance(price, dict):
+            price = {"amount": _money(price), "currency_code": item.get("currency")}
+        total_item_price = item.get("total_item_price") or {}
+        if not isinstance(total_item_price, dict):
+            total_item_price = {"amount": _money(total_item_price)}
         return Observation(
             platform=self.name,
             entity_key=str(item["id"]),
@@ -158,8 +299,8 @@ class VintedPlatform:
             title=item.get("title") or "",
             # Material: diffed between runs.
             attributes={
-                "price": _money(item.get("price")),
-                "currency": (item.get("price") or {}).get("currency_code"),
+                "price": _money(price),
+                "currency": price.get("currency_code"),
                 "brand": item.get("brand_title") or None,
                 "size": item.get("size_title") or None,
                 "condition": item.get("status") or None,
@@ -171,7 +312,7 @@ class VintedPlatform:
             # would manufacture change events forever.
             extra={
                 "image": photo.get("url"),
-                "total_price": _money(item.get("total_item_price")),
+                "total_price": _money(total_item_price),
                 "favourites": item.get("favourite_count"),
                 "host": host,
             },
