@@ -191,9 +191,19 @@ Real latency is nearer 15 to 25 minutes than 15. GitHub's scheduler runs late
 under load and occasionally skips. This is a digest of what appeared recently,
 not a sniping tool.
 
-Vinted's API is undocumented and will break sooner or later. A failing watch
-fails alone and the others still report, so a broken platform degrades the
-scanner rather than stopping it.
+Vinted withdrew its catalog API in September 2026. It now 404s for every query
+while sibling `/api/v2` endpoints still answer JSON, so it is a withdrawal
+rather than a block on us: no User-Agent, cookie or proxy change brings it back.
+Listings are read from the server-rendered catalog page instead, anchored on the
+`data-testid` attributes rather than the class names, which are hashed per build
+and change on every Vinted deploy.
+
+Expect that to break again. A failing watch fails alone and the others still
+report, so a broken platform degrades the scanner rather than stopping it. The
+failure mode worth guarding against is silence: a search matching nothing and
+markup we can no longer read look identical from outside, so the parser insists
+on seeing either results or Vinted's own empty-results state, and treats
+anything else as an error rather than as "nothing new".
 
 Dedup is on `(platform, item id)`. Sellers relist constantly and a relisted item
 gets a fresh id, so you will occasionally see the same garment twice. That is

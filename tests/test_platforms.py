@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import FakeResponse, FakeSession, load_fixture, load_fixture_text
+from conftest import (
+    FakeResponse,
+    FakeSession,
+    catalog_page,
+    load_fixture_text,
+    vinted_items,
+)
 from scanner.platforms import get_platform, platform_names
 from scanner.platforms.base import PlatformError
 from scanner.platforms.shopify import ShopifyPlatform
-from scanner.platforms.vinted import VintedPlatform, build_api_params, parse_search_url
+from scanner.platforms.vinted import VintedPlatform, build_catalog_params, parse_search_url
+from scanner.platforms.vinted_catalog import parse_catalog, parse_label
 
 
 def test_registry_knows_both_platforms():
@@ -22,117 +29,136 @@ def test_unknown_platform_names_the_alternatives():
 
 
 class TestVinted:
-    def test_maps_items_to_observations(self, vinted_session):
+    """Vinted is read from the server-rendered catalog page.
+
+    ``/api/v2/catalog/items`` was withdrawn: it 404s for every query while
+    sibling ``/api/v2`` endpoints still answer JSON, so no header or cookie
+    change brings it back and there is no point asking.
+    """
+
+    def test_maps_listings_to_observations(self, vinted_session):
         observations = VintedPlatform().fetch({"search_text": "patagonia"}, vinted_session)
 
         assert observations
         first = observations[0]
         assert first.platform == "vinted"
         assert first.entity_key.isdigit()
-        assert first.url.startswith("https://")
+        assert first.url.startswith("https://www.vinted.co.uk/items/")
         assert first.title
         assert first.attributes["price"]
-        assert first.attributes["currency"]
+        assert first.attributes["currency"] == "GBP"
+        assert first.attributes["brand"]
+        assert first.attributes["size"]
+        assert first.attributes["condition"]
+
+    def test_currency_is_an_iso_code_not_a_symbol(self, vinted_session):
+        # The page renders "110.00 £". Storing the symbol would make every
+        # listing logged under the old API look like a changed observation.
+        for observation in VintedPlatform().fetch({}, vinted_session):
+            assert observation.attributes["currency"] == "GBP"
 
     def test_volatile_fields_are_never_material(self, vinted_session):
-        # Photo URLs carry a rotating signature and favourite counts drift; if
-        # either were diffed we would manufacture change events forever.
         first = VintedPlatform().fetch({}, vinted_session)[0]
 
         assert "image" not in first.attributes
         assert "favourites" not in first.attributes
         assert first.extra["image"]
+        assert first.extra["total_price"]
 
-    def test_primes_cookies_before_calling_the_api(self, vinted_session):
+    def test_the_url_drops_the_referrer_parameter(self, vinted_session):
+        # Links on the page carry ?referrer=catalog. Keeping it would make the
+        # stored URL depend on where we happened to find the listing.
+        for observation in VintedPlatform().fetch({}, vinted_session):
+            assert "?" not in observation.url
+
+    def test_primes_the_session_before_asking_for_the_catalog(self, vinted_session):
         VintedPlatform().fetch({"host": "www.vinted.co.uk"}, vinted_session)
 
         assert vinted_session.calls[0][0] == "https://www.vinted.co.uk/"
-        assert "/api/v2/catalog/items" in vinted_session.calls[1][0]
+        assert "/catalog" in vinted_session.calls[1][0]
+
+    def test_it_never_calls_the_withdrawn_api(self, vinted_session):
+        VintedPlatform().fetch({"search_text": "x"}, vinted_session)
+
+        assert not any("/api/v2/catalog/items" in url for url, _ in vinted_session.calls)
+
+    def test_list_filters_repeat_rather_than_joining(self, vinted_session):
+        VintedPlatform().fetch(
+            {"search_text": "x", "brand_ids": ["917025", "198238"], "size_ids": ["209"]},
+            vinted_session,
+        )
+
+        _, params = vinted_session.calls[1]
+        assert ("brand_ids[]", "917025") in params
+        assert ("brand_ids[]", "198238") in params
+        assert ("size_ids[]", "209") in params
 
     def test_non_200_is_a_platform_error(self):
-        session = FakeSession({"/api/v2/catalog/items": FakeResponse({}, status_code=403)})
+        session = FakeSession({"/catalog": FakeResponse("", status_code=503)})
 
-        with pytest.raises(PlatformError, match="403"):
+        with pytest.raises(PlatformError, match="503"):
             VintedPlatform().fetch({}, session)
 
-    def test_unexpected_json_is_a_platform_error(self):
-        session = FakeSession({"/api/v2/catalog/items": {"nope": True}})
+    def test_markup_that_parses_to_nothing_is_a_platform_error(self):
+        # Silence here would read as "nothing new" forever, which is the worst
+        # possible failure for a scanner: it looks like it is working.
+        session = FakeSession({"/catalog": FakeResponse("<html><body>rebuilt</body></html>")})
 
-        with pytest.raises(PlatformError, match="unexpected JSON"):
-            VintedPlatform().fetch({}, session)
-
-    def test_404_api_falls_back_to_catalog_page(self):
-        session = FakeSession(
-            {
-                "/api/v2/catalog/items": FakeResponse({}, status_code=404),
-                "/catalog": FakeResponse(load_fixture_text("vinted_catalog_page.html")),
-            }
-        )
-
-        observations = VintedPlatform().fetch(
-            {"host": "www.vinted.co.uk", "search_text": "ventile"},
-            session,
-        )
-
-        assert [o.entity_key for o in observations] == ["1234567890", "2234567890"]
-        assert observations[0].attributes["price"] == "399.00"
-        assert observations[0].attributes["currency"] == "GBP"
-        assert observations[0].attributes["brand"] == "Private White V.C."
-        assert any("/catalog" in url for url, _ in session.calls)
-
-    def test_404_on_www_retries_the_non_www_api_host(self):
-        session = FakeSession(
-            {
-                "https://www.vinted.co.uk/api/v2/catalog/items": FakeResponse({}, status_code=404),
-                "https://vinted.co.uk/api/v2/catalog/items": load_fixture("vinted_catalog"),
-            }
-        )
-
-        observations = VintedPlatform().fetch(
-            {"host": "www.vinted.co.uk", "search_text": "x"},
-            session,
-        )
-
-        assert observations
-        assert any("https://vinted.co.uk/api/v2/catalog/items" in url for url, _ in session.calls)
-        assert not any(url.endswith("/catalog") for url, _ in session.calls)
-
-    def test_404_api_with_unparseable_catalog_is_a_platform_error(self):
-        session = FakeSession(
-            {
-                "/api/v2/catalog/items": FakeResponse({}, status_code=404),
-                "/catalog": FakeResponse("<html><body>no listings json</body></html>"),
-            }
-        )
-
-        with pytest.raises(PlatformError, match="catalog page returned no listings"):
-            VintedPlatform().fetch({"host": "www.vinted.co.uk", "search_text": "x"}, session)
-
-    def test_catalog_fallback_accepts_image_objects(self):
-        session = FakeSession(
-            {
-                "/api/v2/catalog/items": FakeResponse({}, status_code=404),
-                "/catalog": FakeResponse(
-                    """
-                    <script type="application/ld+json">
-                    {"@type":"ItemList","itemListElement":[{"item":{"name":"x","url":"/items/1-x","image":{"url":"https://images/1.jpg"},"offers":{"price":"10.00","priceCurrency":"GBP"}}}]}
-                    </script>
-                    """
-                ),
-            }
-        )
-
-        (observation,) = VintedPlatform().fetch({"host": "www.vinted.co.uk"}, session)
-
-        assert observation.extra["image"] == "https://images/1.jpg"
+        with pytest.raises(PlatformError, match="markup has probably changed"):
+            VintedPlatform().fetch({"host": "www.vinted.co.uk"}, session)
 
 
-class TestVintedPayloadShape:
-    def test_a_null_item_is_a_platform_error(self):
-        session = FakeSession({"catalog/items": {"items": [None]}})
+class TestVintedPaging:
+    def test_one_page_by_default(self, vinted_session):
+        VintedPlatform().fetch({"search_text": "x"}, vinted_session)
 
-        with pytest.raises(PlatformError, match="item list"):
-            VintedPlatform().fetch({"search_text": "x"}, session)
+        catalog_calls = [c for c in vinted_session.calls if "/catalog" in c[0]]
+        assert len(catalog_calls) == 1
+
+    def test_asking_for_more_pages_walks_them(self):
+        pages = {
+            "1": catalog_page(vinted_items(2)),
+            "2": catalog_page([{**i, "id": i["id"] + 500} for i in vinted_items(2)]),
+            "3": catalog_page([{**i, "id": i["id"] + 900} for i in vinted_items(2)]),
+        }
+
+        class Paging(FakeSession):
+            def get(self, url, params=None, **kw):
+                self.calls.append((url, params or []))
+                if "/catalog" not in url:
+                    return FakeResponse("")
+                page = dict(params or []).get("page", "1")
+                return FakeResponse(pages[page])
+
+        session = Paging({})
+        observations = VintedPlatform().fetch({"search_text": "x", "pages": 3}, session)
+
+        catalog_calls = [c for c in session.calls if "/catalog" in c[0]]
+        assert len(catalog_calls) == 3
+        assert ("page", "2") in catalog_calls[1][1]
+        assert len(observations) == 6
+
+    def test_a_page_adding_nothing_new_ends_the_walk(self, vinted_session):
+        # The fake serves the same page every time, so page two is all repeats
+        # and there is no point asking for page three.
+        VintedPlatform().fetch({"search_text": "x", "pages": 5}, vinted_session)
+
+        catalog_calls = [c for c in vinted_session.calls if "/catalog" in c[0]]
+        assert len(catalog_calls) == 2
+
+    def test_repeated_listings_across_pages_appear_once(self, vinted_session):
+        # The fake serves the same page every time, so page two is all repeats.
+        one = VintedPlatform().fetch({"search_text": "x"}, vinted_session)
+        many = VintedPlatform().fetch({"search_text": "x", "pages": 3}, vinted_session)
+
+        assert len(many) == len(one)
+        assert len({o.entity_key for o in many}) == len(many)
+
+    def test_paging_is_capped(self, vinted_session):
+        VintedPlatform().fetch({"search_text": "x", "pages": 99}, vinted_session)
+
+        catalog_calls = [c for c in vinted_session.calls if "/catalog" in c[0]]
+        assert len(catalog_calls) <= 5
 
 
 class TestVintedHosts:
@@ -140,12 +166,12 @@ class TestVintedHosts:
         session = FakeSession({})
 
         with pytest.raises(PlatformError, match="not a known Vinted site"):
-            VintedPlatform().fetch({"host": "evil.example", "search_text": "x"}, session)
+            VintedPlatform().fetch({"host": "www.vinted.example"}, session)
 
         assert session.calls == []
 
     def test_the_host_header_is_left_to_requests(self, vinted_session):
-        VintedPlatform().fetch({"host": "www.vinted.co.uk", "search_text": "x"}, vinted_session)
+        VintedPlatform().fetch({"host": "www.vinted.co.uk"}, vinted_session)
 
         assert "Host" not in vinted_session.headers
 
@@ -177,11 +203,12 @@ class TestVintedUrlImport:
         with pytest.raises(PlatformError):
             parse_search_url("")
 
-    def test_lists_become_comma_joined_api_params(self):
-        params = build_api_params({"brand_ids": ["53", "88"], "search_text": "x"})
+    def test_lists_become_repeated_catalog_params(self):
+        params = build_catalog_params({"brand_ids": ["53", "88"], "search_text": "x"})
 
-        assert params["brand_ids"] == "53,88"
-        assert params["per_page"] == 40
+        assert ("brand_ids[]", "53") in params
+        assert ("brand_ids[]", "88") in params
+        assert ("search_text", "x") in params
 
 
 class TestShopify:
@@ -396,3 +423,132 @@ class TestVintedBrandLookup:
 
         with pytest.raises(PlatformError, match="unexpected JSON"):
             VintedPlatform().brands("x", session)
+
+
+class TestVintedEmptyResults:
+    """A search matching nothing is not a failure; unreadable markup is.
+
+    Conflating them is the worst failure available to a scanner: it sits there
+    reporting nothing new while being completely broken. Vinted renders an
+    explicit empty state, which is what tells the two apart.
+    """
+
+    EMPTY_PAGE = (
+        '<html><body><div class="feed-grid"></div>'
+        '<h1 data-testid="search-empty-state--title">No items found</h1>'
+        "</body></html>"
+    )
+
+    def test_an_empty_search_returns_no_listings_without_erroring(self):
+        session = FakeSession({"/catalog": FakeResponse(self.EMPTY_PAGE)})
+
+        assert VintedPlatform().fetch({"host": "www.vinted.co.uk"}, session) == []
+
+    def test_a_page_with_the_grid_but_no_items_is_accepted(self):
+        session = FakeSession(
+            {"/catalog": FakeResponse('<html><body><div class="feed-grid"></div></body></html>')}
+        )
+
+        assert VintedPlatform().fetch({"host": "www.vinted.co.uk"}, session) == []
+
+    def test_a_page_with_neither_grid_nor_empty_state_is_an_error(self):
+        session = FakeSession({"/catalog": FakeResponse("<html><body>Welcome!</body></html>")})
+
+        with pytest.raises(PlatformError, match="markup has probably changed"):
+            VintedPlatform().fetch({"host": "www.vinted.co.uk"}, session)
+
+
+class TestVintedPriceFormat:
+    """Prices are canonicalised so formatting alone never reads as a change."""
+
+    @pytest.mark.parametrize(
+        ("rendered", "expected"),
+        [
+            ("24 £", "24.00"),
+            ("24.0 £", "24.00"),
+            ("24.00 £", "24.00"),
+            ("1,234.50 £", "1234.50"),
+            ("1 234,50 €", "1234.50"),
+            ("€1.99", "1.99"),
+        ],
+    )
+    def test_amounts_canonicalise_to_two_places(self, rendered, expected):
+        _, _, prices = parse_label(f"An item, Brand: X, {rendered}")
+
+        assert prices[0][0] == expected
+
+    def test_symbols_become_iso_codes(self):
+        # Storing "£" would make every listing recorded under the old JSON API
+        # look like it had changed the first time it was seen again.
+        for symbol, code in (("£", "GBP"), ("€", "EUR"), ("$", "USD")):
+            _, _, prices = parse_label(f"An item, 10.00 {symbol}")
+            assert prices[0][1] == code
+
+
+class TestVintedLabelParsing:
+    """The accessibility label is the only place the listing's fields live."""
+
+    def test_a_title_containing_commas_survives(self):
+        title, fields, prices = parse_label(
+            "Patagonia Retro-X fleece jacket, size M, Brand: Patagonia, "
+            "Condition: New without tags, Size: M, 110.00 £, 116.20 £"
+        )
+
+        assert title == "Patagonia Retro-X fleece jacket, size M"
+        assert fields == {"brand": "Patagonia", "condition": "New without tags", "size": "M"}
+        assert [p[0] for p in prices] == ["110.00", "116.20"]
+
+    def test_a_size_ending_in_digits_is_not_mistaken_for_a_price(self):
+        # "M / UK 12-14, 100.00 £" must not yield a price of 14.
+        _, fields, prices = parse_label(
+            "A fleece, Brand: Patagonia, Size: M / UK 12-14, 100.00 £, 105.70 £"
+        )
+
+        assert fields["size"] == "M / UK 12-14"
+        assert [p[0] for p in prices] == ["100.00", "105.70"]
+
+    def test_an_unknown_locale_still_yields_title_and_price(self):
+        # Title and price come from the label's shape, not its vocabulary, so a
+        # locale we have never seen degrades to a usable listing.
+        title, fields, prices = parse_label(
+            "Flisinis džemperis, Prekės ženklas: Patagonia, 45,00 €"
+        )
+
+        assert title == "Flisinis džemperis"
+        assert prices[0] == ("45.00", "EUR")
+        assert fields == {}
+
+    def test_french_labels_map_to_our_field_names(self):
+        _, fields, _ = parse_label("Polaire, Marque: Patagonia, Taille: M, État: Bon, 30,00 €")
+
+        assert fields == {"brand": "Patagonia", "size": "M", "condition": "Bon"}
+
+    def test_a_label_with_no_fields_at_all_is_still_a_title(self):
+        title, fields, prices = parse_label("Just a thing")
+
+        assert title == "Just a thing"
+        assert fields == {}
+        assert prices == []
+
+
+class TestVintedRealMarkup:
+    """Recorded from the live catalog page, so this is what we actually face."""
+
+    def test_the_recorded_page_parses_completely(self):
+        listings = parse_catalog(load_fixture_text("vinted_catalog.html"), "www.vinted.co.uk")
+
+        assert len(listings) == 4
+        for listing in listings:
+            assert listing["id"].isdigit()
+            assert listing["title"]
+            assert listing["price"]
+            assert listing["currency"] == "GBP"
+            assert listing["url"].startswith("https://www.vinted.co.uk/items/")
+            assert listing["image"]
+            assert listing["brand"] and listing["size"] and listing["condition"]
+
+    def test_a_listing_with_no_favourites_reads_as_zero_not_missing(self):
+        listings = parse_catalog(load_fixture_text("vinted_catalog.html"), "www.vinted.co.uk")
+
+        assert all(isinstance(listing["favourites"], int) for listing in listings)
+        assert 0 in {listing["favourites"] for listing in listings}

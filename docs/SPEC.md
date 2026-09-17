@@ -68,11 +68,13 @@ real-world latency is nearer 15–25 minutes under runner contention. This is a
 "what appeared lately" digest, not a sniping tool. The repository is public, so
 Actions minutes are free and the watch list is public — both accepted.
 
-A spike confirmed Vinted's old undocumented JSON API *used* to answer from a
-datacenter IP with no proxy, but it now intermittently returns 404. The adapter
-still tries `/api/v2/catalog/items` first, then falls back to parsing listings
-from the public `/catalog` page's embedded structured data. No proxy pool is
-needed, unlike the reference implementation.
+Vinted's undocumented JSON API answered from a datacenter IP with no proxy when
+this was built. It was withdrawn in September 2026 and now 404s for *every*
+query, while sibling `/api/v2` endpoints still answer JSON — a withdrawal, not
+a block on us, and nothing about our request brings it back. There is no point
+spending a request per scan rediscovering that, so the public `/catalog` page
+is now the only path. Priming the session against the locale homepage is still
+required; no proxy pool is needed.
 
 The workflow re-enables itself on every run, defeating GitHub's 60-day
 inactivity disable. A `concurrency` group prevents two runs racing to commit.
@@ -143,11 +145,25 @@ session all injected.
 
 ### Platforms
 
-**Vinted** seeds cookies from the locale homepage, then tries
-`/api/v2/catalog/items`; if that returns 404 it falls back to parsing embedded
-listing data on `/catalog`. `entity_key` is the item id. Material attributes:
-title, price, currency, brand, size, condition, seller. Extras: image URL,
+**Vinted** seeds cookies from the locale homepage, then reads the
+server-rendered `/catalog` page. `entity_key` is the item id. Material
+attributes: price, currency, brand, size, condition. Extras: image URL,
 favourite count, total price including buyer protection.
+
+The parser anchors on `data-testid` attributes, not class names: class names
+are hashed per build (`ItemBox-module-scss-module__NoC3Da__`) and change on
+every deploy, while the test ids belong to Vinted's own test suite and move
+rarely. Each listing's fields come from its accessibility label. Title and
+price fall out of that label's *structure*, so an unseen locale still yields a
+usable listing; only the mapping of label keys to `brand`/`size`/`condition` is
+locale-specific, and an unrecognised key is skipped rather than guessed at.
+
+Prices are canonicalised to two decimal places and currency symbols to ISO
+codes, so that formatting alone never registers as a price change.
+
+`seller` is no longer available — the catalog page does not carry it. Since
+`diff` only compares attributes present on the incoming observation, dropping
+one cannot manufacture a change event.
 
 **Shopify** calls `/collections/{collection}/products.json`, which two of the
 four retailers named (Private White V.C., Derek Rose) serve unauthenticated.

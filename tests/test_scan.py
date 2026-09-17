@@ -12,7 +12,14 @@ from datetime import timedelta
 
 import pytest
 
-from conftest import CapturingNotifier, FakeSession, load_fixture
+from conftest import (
+    CapturingNotifier,
+    FakeResponse,
+    FakeSession,
+    catalog_page,
+    load_fixture,
+    vinted_items,
+)
 from scanner.config import parse
 from scanner.scan import run_scan
 from scanner.store import Store
@@ -37,7 +44,12 @@ def config():
 
 @pytest.fixture
 def catalog():
-    return load_fixture("vinted_catalog")
+    """Listings as plain dicts; ``vinted_session`` renders them as a real page."""
+    return vinted_items(3)
+
+
+def vinted_session(catalog):
+    return FakeSession({"/catalog": FakeResponse(catalog_page(catalog))})
 
 
 def scan(config, store, session, now, notifier=None, **kwargs):
@@ -56,36 +68,36 @@ class TestFirstRun:
         store = Store(tmp_path)
         notifier = CapturingNotifier()
 
-        report = scan(config, store, FakeSession({"catalog/items": catalog}), now, notifier)
+        report = scan(config, store, vinted_session(catalog), now, notifier)
 
         assert report.scanned == 1
-        assert len(report.appeared) == len(catalog["items"])
+        assert len(report.appeared) == len(catalog)
         assert report.changed == []
         assert report.notification_sent
 
     def test_the_digest_names_the_watch_and_lists_the_finds(self, tmp_path, config, catalog, now):
         notifier = CapturingNotifier()
 
-        scan(config, Store(tmp_path), FakeSession({"catalog/items": catalog}), now, notifier)
+        scan(config, Store(tmp_path), vinted_session(catalog), now, notifier)
 
         (digest,) = notifier.sent
         assert "Patagonia fleece" in digest.subject or "Patagonia fleece" in digest.text_body
-        for item in catalog["items"]:
+        for item in catalog:
             assert item["title"] in digest.text_body
             assert item["title"] in digest.html_body
 
     def test_events_are_persisted(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
 
-        scan(config, store, FakeSession({"catalog/items": catalog}), now, CapturingNotifier())
+        scan(config, store, vinted_session(catalog), now, CapturingNotifier())
 
-        assert len(list(Store(tmp_path).read_events())) == len(catalog["items"])
+        assert len(list(Store(tmp_path).read_events())) == len(catalog)
 
 
 class TestSecondRun:
     def test_an_unchanged_rerun_is_completely_silent(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
-        session = FakeSession({"catalog/items": catalog})
+        session = vinted_session(catalog)
         scan(config, store, session, now, CapturingNotifier())
         before = len(list(store.read_events()))
 
@@ -98,14 +110,14 @@ class TestSecondRun:
 
     def test_a_price_change_is_recorded_and_notified(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
-        scan(config, store, FakeSession({"catalog/items": catalog}), now, CapturingNotifier())
+        scan(config, store, vinted_session(catalog), now, CapturingNotifier())
 
         cheaper = copy.deepcopy(catalog)
-        cheaper["items"][0]["price"]["amount"] = "1.00"
+        cheaper[0]["price"] = "1.00"
         notifier = CapturingNotifier()
 
         report = scan(
-            config, store, FakeSession({"catalog/items": cheaper}),
+            config, store, vinted_session(cheaper),
             now + timedelta(minutes=15), notifier,
         )
 
@@ -115,14 +127,14 @@ class TestSecondRun:
 
     def test_a_price_rise_is_recorded_but_not_notified(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
-        scan(config, store, FakeSession({"catalog/items": catalog}), now, CapturingNotifier())
+        scan(config, store, vinted_session(catalog), now, CapturingNotifier())
 
         dearer = copy.deepcopy(catalog)
-        dearer["items"][0]["price"]["amount"] = "9999.00"
+        dearer[0]["price"] = "9999.00"
         notifier = CapturingNotifier()
 
         report = scan(
-            config, store, FakeSession({"catalog/items": dearer}),
+            config, store, vinted_session(dearer),
             now + timedelta(minutes=15), notifier,
         )
 
@@ -131,16 +143,16 @@ class TestSecondRun:
 
     def test_a_rotating_photo_signature_changes_nothing(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
-        scan(config, store, FakeSession({"catalog/items": catalog}), now, CapturingNotifier())
+        scan(config, store, vinted_session(catalog), now, CapturingNotifier())
 
         rotated = copy.deepcopy(catalog)
-        for item in rotated["items"]:
-            item["photo"]["url"] = item["photo"]["url"].split("?")[0] + "?s=totally-different"
-            item["favourite_count"] = (item.get("favourite_count") or 0) + 17
+        for index, item in enumerate(rotated):
+            item["image"] = f"https://img/{item['id']}.webp?s=totally-different"
+            item["favourites"] = 40 + index
         notifier = CapturingNotifier()
 
         report = scan(
-            config, store, FakeSession({"catalog/items": rotated}),
+            config, store, vinted_session(rotated),
             now + timedelta(minutes=15), notifier,
         )
 
@@ -160,11 +172,11 @@ class TestFailureIsolation:
         )
         notifier = CapturingNotifier()
 
-        session = FakeSession({"catalog/items": catalog})
+        session = vinted_session(catalog)
         report = scan(config, Store(tmp_path), session, now, notifier)
 
         assert [f.watch_id for f in report.failures] == ["dead"]
-        assert len(report.appeared) == len(catalog["items"])
+        assert len(report.appeared) == len(catalog)
         assert notifier.sent
 
     def test_a_platform_that_chokes_on_its_response_fails_alone(self, tmp_path, catalog, now):
@@ -179,7 +191,7 @@ class TestFailureIsolation:
         )
         session = FakeSession(
             {
-                "catalog/items": {"items": [{"title": "no id field"}]},
+                "/catalog": FakeResponse("<html><body>markup moved</body></html>"),
                 "products.json": load_fixture("shopify_products"),
             }
         )
@@ -202,14 +214,14 @@ class TestNotificationDurability:
         store = Store(tmp_path)
 
         with pytest.raises(RuntimeError, match="smtp exploded"):
-            scan(config, store, FakeSession({"catalog/items": catalog}), now,
+            scan(config, store, vinted_session(catalog), now,
                  CapturingNotifier(fail=True))
 
         assert store.notified_through is None
 
     def test_the_next_run_resends_what_the_failure_lost(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
-        session = FakeSession({"catalog/items": catalog})
+        session = vinted_session(catalog)
         with pytest.raises(RuntimeError):
             scan(config, store, session, now, CapturingNotifier(fail=True))
 
@@ -218,15 +230,15 @@ class TestNotificationDurability:
 
         # Nothing new was observed, but the pending alerts still go out.
         assert report.events == []
-        assert len(report.notified) == len(catalog["items"])
+        assert len(report.notified) == len(catalog)
         assert notifier.sent
 
     def test_no_notifier_records_the_events_anyway(self, tmp_path, config, catalog, now):
         store = Store(tmp_path)
 
-        report = scan(config, store, FakeSession({"catalog/items": catalog}), now, None)
+        report = scan(config, store, vinted_session(catalog), now, None)
 
-        assert len(report.appeared) == len(catalog["items"])
+        assert len(report.appeared) == len(catalog)
         assert report.notification_sent is False
         assert store.notified_through is None
 
@@ -289,12 +301,12 @@ class TestOverlappingWatches:
             }
         )
         notifier = CapturingNotifier()
-        session = FakeSession({"catalog/items": catalog})
+        session = vinted_session(catalog)
 
         report = scan(config, Store(tmp_path), session, now, notifier)
 
         # Recorded once, under the watch that ran first, but seen by both.
-        assert len(report.appeared) == len(catalog["items"])
+        assert len(report.appeared) == len(catalog)
         assert {e.watch_id for e in report.appeared} == {"drops"}
         assert all(e.seen_by == ("drops", "fleeces") for e in report.appeared)
         # Notified under the watch whose rule matched.
@@ -311,6 +323,6 @@ class TestOverlappingWatches:
             }
         )
         store = Store(tmp_path)
-        scan(config, store, FakeSession({"catalog/items": catalog}), now)
+        scan(config, store, vinted_session(catalog), now)
 
         assert all(e.seen_by == ("a", "b") for e in store.read_events())
